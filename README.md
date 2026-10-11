@@ -62,6 +62,24 @@ A human can also work a task: `POST /api/tasks/manual` returns a fork and a
 one-hour write token; push, then `POST /api/tasks/:id/submit` and the change
 enters the merge round like an agent's.
 
-Open the Worker URL for the dashboard; `GET /api/state` is what it renders.
+## The dashboard
+
+Open the Worker URL. The page asks for the dashboard token once and keeps
+it in the browser; `?token=…` in the URL also works and is stripped on
+load. The map is the Vectorize index projected onto three fixed axes:
+files are points coloured by directory, tasks are spheres that pulse
+while running, glide to the merge gate while merging and fade once
+merged, and edges join in-flight tasks whose work overlaps. Click a task
+for its diff, Clef's answers against the thresholds, the agent's output
+and the approve, retry and abandon actions; click a file for the tasks
+touching it. `GET /api/state` is everything the page renders.
+
+To preview the built dashboard locally against a deployed Lockkeeper
+without putting the token in a browser:
+
+```sh
+pnpm --filter dashboard build
+node dashboard/dev-proxy.mjs --upstream https://<worker>.workers.dev --token-file ./secrets.env --port 8788
+```
 
 Status: under construction (October 2026).
