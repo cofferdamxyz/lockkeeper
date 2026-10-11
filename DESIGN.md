@@ -377,9 +377,12 @@ above it, and `main` is the column at the lock.
   read as their first command plus a count, outputs that carry a signal
   (test counts, commit shas, errors) show inline and the rest unfold on
   click, the agent's notes and its outcome render as prose, and its
-  commits close the record in order. Beside it, tabs for the map, the
-  diff and the decision (Clef's answers as gauges with the threshold
-  mark). Approve is the only accented action.
+  commits close the record in order. The record's sections are tabs on
+  the header's bottom edge, the way a pull request page does it:
+  activity, map (the city with this task lit, full width), diff (with
+  the file count) and decision (Clef's answers as gauges with the
+  threshold mark, the unattended score on the tab). Approve is the only
+  accented action.
 - Toasts announce ready, merged, conflict, needs review.
 
 **Data.** `GET /api/state` carries the files, every commit with its
@@ -557,6 +560,9 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11 (night): the session view's map, diff and decision moved
+  from a side panel into tabs on the header edge beside activity, one
+  section at a time at every width.
 - 2026-10-11 (night): the session view polished: a facts header with
   file chips, the brief shown, tool calls paired with their results and
   foldable, signal outputs inline, notes and outcomes as prose, the

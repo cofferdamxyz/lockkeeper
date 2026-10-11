@@ -34,7 +34,7 @@ function Fact({ label, children, tone }: { label: string; children: React.ReactN
   return (
     <div className="min-w-0">
       <div className="eyebrow">{label}</div>
-      <div className={`text-sm mt-0.5 truncate ${tone === "good" ? "text-foreground" : tone === "bad" ? "text-red-400" : tone === "muted" ? "text-muted-foreground" : ""}`}>{children}</div>
+      <div className={`text-sm mt-0.5 whitespace-nowrap ${tone === "good" ? "text-foreground" : tone === "bad" ? "text-red-400" : tone === "muted" ? "text-muted-foreground" : ""}`}>{children}</div>
     </div>
   );
 }
@@ -58,7 +58,7 @@ export function TaskView({
 }) {
   const [diff, setDiff] = useState<string | null>(null);
   const [brief, setBrief] = useState<string | null>(null);
-  const [tab, setTab] = useState("map");
+  const [tab, setTab] = useState("activity");
   // The full row carries the brief and the diff; the state poll carries neither.
   useEffect(() => {
     let gone = false;
@@ -79,9 +79,10 @@ export function TaskView({
   const merges = (state?.merges ?? []).filter((m) => m.task_id === task.id);
   const live = task.status === "running" || task.status === "merging";
   const duration = elapsed(task.createdAt, live ? now : new Date(task.updatedAt).getTime());
+  const score = decision?.unattended[task.id];
   return (
-    <div className="h-full flex flex-col">
-      <header className="border-b px-6 pt-4 pb-3">
+    <Tabs value={tab} onValueChange={(v) => setTab(String(v))} className="h-full flex flex-col gap-0">
+      <header className="border-b px-6 pt-4">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" className="size-8 -ml-2 shrink-0" aria-label="Back" onClick={() => navigate("/")}>
             <ArrowLeft className="size-4" />
@@ -129,37 +130,40 @@ export function TaskView({
             ))}
           </div>
         )}
+        {/* The record's sections as tabs on the header's bottom edge, the way a pull request page does it. */}
+        <TabsList variant="line" className="mt-3 ml-7 h-9 gap-5">
+          <TabsTrigger value="activity" className="px-1">Activity</TabsTrigger>
+          <TabsTrigger value="map" className="px-1">Map</TabsTrigger>
+          <TabsTrigger value="diff" className="px-1">
+            Diff{task.files.length > 0 && <span className="mono text-[11px] text-muted-foreground">{task.files.length}</span>}
+          </TabsTrigger>
+          <TabsTrigger value="decision" className="px-1">
+            Decision{score != null && Number.isFinite(score) && <span className="mono text-[11px] text-muted-foreground">{score.toFixed(2)}</span>}
+          </TabsTrigger>
+        </TabsList>
       </header>
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_460px]">
-        <div className="min-h-0 overflow-auto px-6 py-5">
-          <div className="max-w-2xl">
-            <ActivityStream task={task} events={activity} brief={brief} live={live} />
-            {task.error && <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs whitespace-pre-wrap">{task.error}</p>}
-          </div>
+      <TabsContent value="activity" className="flex-1 min-h-0 overflow-auto px-6 py-5">
+        <div className="max-w-2xl">
+          <ActivityStream task={task} events={activity} brief={brief} live={live} />
+          {task.error && <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs whitespace-pre-wrap">{task.error}</p>}
         </div>
-        <div className="min-h-0 border-l flex flex-col">
-          <Tabs value={tab} onValueChange={(v) => setTab(String(v))} className="flex-1 min-h-0 flex flex-col">
-            <TabsList className="m-3 self-start">
-              <TabsTrigger value="map">Map</TabsTrigger>
-              <TabsTrigger value="diff">Diff</TabsTrigger>
-              <TabsTrigger value="decision">Decision</TabsTrigger>
-            </TabsList>
-            <TabsContent value="map" className="flex-1 min-h-0 relative">
-              {state && <City state={state} activity={{ [task.id]: activity }} now={now} at={null} windowMs={pickWindow(state, now)} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} dark={dark} focus={task.id} compact />}
-            </TabsContent>
-            <TabsContent value="diff" className="flex-1 min-h-0 overflow-auto px-4 pb-4">
-              {diff === null ? <p className="text-xs text-muted-foreground">Loading…</p> : diff === "" ? <p className="text-xs text-muted-foreground">No diff yet.</p> : (
-                <pre className="mono text-[11px] leading-relaxed whitespace-pre-wrap break-words">
-                  {diff.split("\n").map((l, i) => (
-                    <span key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-500" : l.startsWith("-") && !l.startsWith("---") ? "text-red-400" : l.startsWith("@@") ? "text-blue-400" : "text-muted-foreground"}>
-                      {l}
-                      {"\n"}
-                    </span>
-                  ))}
-                </pre>
-              )}
-            </TabsContent>
-            <TabsContent value="decision" className="flex-1 min-h-0 overflow-auto px-4 pb-4 space-y-4">
+      </TabsContent>
+      <TabsContent value="map" className="flex-1 min-h-0 relative">
+        {state && <City state={state} activity={{ [task.id]: activity }} now={now} at={null} windowMs={pickWindow(state, now)} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} dark={dark} focus={task.id} />}
+      </TabsContent>
+      <TabsContent value="diff" className="flex-1 min-h-0 overflow-auto px-6 py-4">
+        {diff === null ? <p className="text-xs text-muted-foreground">Loading…</p> : diff === "" ? <p className="text-xs text-muted-foreground">No diff yet.</p> : (
+          <pre className="mono text-[11px] leading-relaxed whitespace-pre-wrap break-words max-w-4xl">
+            {diff.split("\n").map((l, i) => (
+              <span key={i} className={l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-500" : l.startsWith("-") && !l.startsWith("---") ? "text-red-400" : l.startsWith("@@") ? "text-blue-400" : "text-muted-foreground"}>
+                {l}
+                {"\n"}
+              </span>
+            ))}
+          </pre>
+        )}
+      </TabsContent>
+      <TabsContent value="decision" className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-4 max-w-2xl">
               {decision ? (
                 <>
                   <div className="eyebrow">Clef · {new Date(decision.at).toLocaleTimeString()} · {decision.candidates.length} candidate{decision.candidates.length === 1 ? "" : "s"}{decision.chosen === task.id ? " · chosen next" : ""}</div>
@@ -174,23 +178,20 @@ export function TaskView({
               ) : (
                 <p className="text-xs text-muted-foreground">No merge round has weighed this change yet.</p>
               )}
-              {merges.length > 0 && (
-                <div className="space-y-1">
-                  <div className="eyebrow">Lock</div>
-                  {merges.map((m) => (
-                    <div key={m.id} className="mono text-[11px] text-muted-foreground flex gap-3">
-                      <span>{new Date(m.at).toLocaleTimeString()}</span>
-                      <span className="text-foreground">{m.mode.replace("_", " ")}</span>
-                      {m.conflict ? <span className="text-red-400">conflict{m.resolved_by ? ` · resolved by ${m.resolved_by}` : ""}</span> : null}
-                      {m.main_after && <span>→ {short(m.main_after)}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
-      </div>
-    </div>
+        {merges.length > 0 && (
+          <div className="space-y-1">
+            <div className="eyebrow">Lock</div>
+            {merges.map((m) => (
+              <div key={m.id} className="mono text-[11px] text-muted-foreground flex gap-3">
+                <span>{new Date(m.at).toLocaleTimeString()}</span>
+                <span className="text-foreground">{m.mode.replace("_", " ")}</span>
+                {m.conflict ? <span className="text-red-400">conflict{m.resolved_by ? ` · resolved by ${m.resolved_by}` : ""}</span> : null}
+                {m.main_after && <span>→ {short(m.main_after)}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </TabsContent>
+    </Tabs>
   );
 }
