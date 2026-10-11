@@ -268,35 +268,35 @@ moves things between the two. Dark by default on a neutral scale with one
 accent, blue, reserved for live agents, commits, the gate and the moment a
 merge lands; a light scheme is a toggle.
 
-**The map (three.js).** A scene you orbit, zoom and pan, where every point
-is clickable: a file opens its content with the commits and agents that
-touched it, a commit opens its message, author, files and the session
-that produced it, an agent opens a link to its session.
+**The map (three.js).** A camera scene in the language of Alex Harri's
+*Planes*: a near-black ground grid tinted blue, glassy translucent planes
+with outlined edges, phong spheres for points, cylinder lines, a tilted
+camera that slowly orbits until you take it. Every point is clickable: a
+file opens its content with the commits and agents that touched it, a
+commit opens its message, author, files and the session that produced it,
+an agent opens a link to its session.
 
-- Files sit where the projection puts them in three dimensions, coloured
-  by directory, with the directory's name floating at its centroid.
-- Every commit on the default branch, including the agents' own commits
-  on merged branches, is a point: embedded from its message and the files
-  it changed, then pulled toward those files. New commits land with a
-  short animation.
-- Agents are nodes: hollow while queued, breathing while running, trailing
-  while moving. Status is geometry (dashed ring waiting for a human, a bar
-  when blocked, a cut when failed); colour is spent only on live agents.
-- Overlap between in-flight tasks is a taut line whose weight is the
-  overlap. A conflict makes the line shiver until the resolver re-threads
-  it. Hover a node and its lines lift; hover a file and the agents touching
-  it lift.
-- The lock on the right edge is drawn: two gates and a chamber, `main` as a
-  line beyond it with the head commit. A merge is choreographed: the node
-  enters, the near gate closes, the chamber fills while the tests run, the
-  far gate opens, the node exits into `main`, a ripple crosses the map as it
-  re-indexes. A change that needs review waits at the closed gate.
-- Enter in the launcher spawns a node at the cursor that flies to where its
-  goal embeds. Drag pans, wheel zooms, depth gives parallax.
-- Faint ticks on a node echo its activity (reading, editing, testing), so
-  the map alone says who is doing what.
-- The map therefore accumulates the whole history of the work, and the
-  timeline replays it commit by commit.
+- **The merge ring is the origin.** `main` sits at (0, 0, 0) as a ring on
+  the ground; everything else is arranged around it.
+- **Directories are planes through the origin**, each tilted toward where
+  its files sit in the projected index. Files are projected onto their
+  plane (q − (n·q)n), so a plane reads as a module and its points as the
+  module's files.
+- **Commits orbit the ring.** A commit sits on the plane of the directory
+  it touched, in the direction of the files it changed, at a distance from
+  the ring that grows with its age (newest just outside the ring, older
+  further out, on a log scale). A commit that touched two directories sits
+  on the line where their planes meet, n₁ × n₂, which is the honest place
+  for a change that straddles modules. Commits drift slowly around their
+  plane's normal, and new ones land with a short animation.
+- **Agents hover above the plane they work on**, with a thin line down to
+  the plane, the point-to-plane distance of the post: queued agents float
+  high, running agents descend as they work, a ready one touches the
+  plane, and a merging one travels to the ring and passes through it.
+  Overlap between in-flight agents is a line between them; a change that
+  needs review waits at its plane with an amber ring.
+- The ring spins while a merge is in progress and a ripple crosses the
+  ground when one lands.
 
 **The chrome (shadcn/ui).**
 
