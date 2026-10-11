@@ -121,10 +121,26 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
       if (key !== cellKey && screenFiles.length >= 3) {
         cellKey = key;
         try {
-          const pts = Group.fromArray(screenFiles.map((f) => [f.x, f.y]));
+          // Delaunay needs distinct points; files that project onto each other get a deterministic nudge.
+          const seen = new Set<string>();
+          const pts = Group.fromArray(
+            screenFiles.map((f, i) => {
+              let x = f.x;
+              let y = f.y;
+              let k = `${Math.round(x)}:${Math.round(y)}`;
+              while (seen.has(k)) {
+                x += 1.5 + (i % 3);
+                y += 1 + (i % 2);
+                k = `${Math.round(x)}:${Math.round(y)}`;
+              }
+              seen.add(k);
+              return [x, y];
+            }),
+          );
           const bound = Group.fromArray([[0, 0], [g.gateX - 90, g.h]]);
           cells = Create.delaunay(pts).voronoi(bound);
-        } catch {
+        } catch (e) {
+          console.warn("voronoi failed", e);
           cells = [];
         }
       }

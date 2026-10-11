@@ -242,7 +242,7 @@ export default function Dashboard() {
       </header>
 
       <div className="absolute left-3 bottom-16 w-[380px] max-w-[calc(100vw-24px)]">
-        {shown && <FleetStrip tasks={shown.tasks} activity={activity} selected={selected} onSelect={setSelected} now={now} />}
+        {shown && <FleetStrip tasks={shown.tasks} activity={activity} selected={selected} onSelect={setSelected} now={replayAt ?? now} />}
       </div>
 
       <div className="absolute left-3 right-3 bottom-3">
@@ -271,7 +271,7 @@ export default function Dashboard() {
         );
       })()}
 
-      <TaskSheet task={selectedTask} state={shown} activity={selectedTask ? activity[selectedTask.id] ?? [] : []} onClose={() => setSelected(null)} onAction={(t, a) => void act(t, a)} busy={busy} now={now} />
+      <TaskSheet task={selectedTask} state={shown} activity={selectedTask ? activity[selectedTask.id] ?? [] : []} onClose={() => setSelected(null)} onAction={(t, a) => void act(t, a)} busy={busy} now={replayAt ?? now} />
       <Launcher open={launcherOpen} onOpenChange={setLauncherOpen} onLaunch={launch} busy={busy} />
       <Palette
         open={paletteOpen}
