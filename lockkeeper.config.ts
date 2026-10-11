@@ -45,7 +45,7 @@ const config: LockkeeperConfig = {
       repo: "sample-api",
       defaultBranch: "main",
       conventions: "AGENTS.md",
-      test: "npm test",
+      test: "npm install --no-audit --no-fund --silent && npm test",
       mergeMode: "mirror",
     },
   ],

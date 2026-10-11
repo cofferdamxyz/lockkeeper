@@ -25,6 +25,12 @@ describe("buildMergeRequest", () => {
     expect(JSON.parse(req.state).ready_changes).toHaveLength(3);
   });
 
+  it("omits the choice when there is a single candidate", () => {
+    const req = buildMergeRequest([candidate("only")], [], "clef");
+    expect(req.questions.next).toBeUndefined();
+    expect(Object.keys(req.questions)).toEqual(["unattended.only", "risk.only"]);
+  });
+
   it("stays under Clef's 64-question limit for 20 candidates", () => {
     const req = buildMergeRequest(Array.from({ length: 20 }, (_, i) => candidate(`t${i}`)), [], "clef");
     expect(Object.keys(req.questions).length).toBeLessThanOrEqual(64);

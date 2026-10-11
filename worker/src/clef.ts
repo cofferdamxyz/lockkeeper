@@ -77,14 +77,16 @@ export function buildMergeRequest(
     null,
     1,
   );
-  const questions: Record<string, ClefQuestion> = {
-    next: {
+  const questions: Record<string, ClefQuestion> = {};
+  // A choice needs at least two options; with one candidate the order is settled.
+  if (candidates.length > 1) {
+    questions.next = {
       type: "choice",
       instructions:
         "Which ready change should merge into main next? Prefer green tests, the smallest blast radius, the least overlap with the other ready changes, and the oldest on ties.",
       criteria: Object.fromEntries(candidates.map((c) => [c.id, summarizeCandidate(c)])),
-    },
-  };
+    };
+  }
   for (const c of candidates) {
     questions[`unattended.${c.id}`] = {
       type: "noul",

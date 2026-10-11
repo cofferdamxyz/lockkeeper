@@ -6,7 +6,7 @@ import { buildMergeRequest, type Candidate, type MergeDecision, parseMergeDecisi
 import { acquireLease, getProject, getTask, listTasks, newId, releaseLease, type TaskRow, updateTask } from "./db";
 import type { LockkeeperEnv } from "./env";
 import { indexProject } from "./repomap";
-import { markMerged, projectConfig, restartTask } from "./tasks";
+import { markMerged, projectConfig, restartTask, triggerMerge } from "./tasks";
 import { cosine, getVectors, jaccard, taskVectorId } from "./vectors";
 
 type RoundOutcome = { kind: "idle" } | { kind: "continue" } | { kind: "resolving"; taskId: string };
@@ -41,6 +41,12 @@ export class MergeWorkflow extends WorkflowEntrypoint<LockkeeperEnv, { project: 
       }
     } finally {
       await step.do("release", () => releaseLease(this.env.DB, project, instance));
+      // A task that became ready while this instance was finishing may have found the lease taken.
+      await step.do("recheck", async () => {
+        const pending = await listTasks(this.env.DB, project, ["ready", "approved"]);
+        if (pending.length > 0) await triggerMerge(this.env, project);
+        return pending.length;
+      });
     }
     return { rounds: rounds.length };
   }
