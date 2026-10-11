@@ -269,34 +269,34 @@ accent, blue, reserved for live agents, commits, the gate and the moment a
 merge lands; a light scheme is a toggle.
 
 **The map (three.js).** A camera scene in the language of Alex Harri's
-*Planes*: a near-black ground grid tinted blue, glassy translucent planes
-with outlined edges, phong spheres for points, cylinder lines, a tilted
-camera that slowly orbits until you take it. Every point is clickable: a
-file opens its content with the commits and agents that touched it, a
-commit opens its message, author, files and the session that produced it,
-an agent opens a link to its session.
+*Planes*: a near-black ground grid tinted blue, thin lines, phong spheres,
+a tilted camera that slowly orbits until you take it. Every point is
+clickable: a file opens its content with the commits and agents that
+touched it, a commit opens its message, author, files and the session
+that produced it, an agent opens a link to its session.
 
-- **The merge ring is the origin.** `main` sits at (0, 0, 0) as a ring on
-  the ground; everything else is arranged around it.
-- **Directories are planes through the origin**, each tilted toward where
-  its files sit in the projected index. Files are projected onto their
-  plane (q − (n·q)n), so a plane reads as a module and its points as the
-  module's files.
-- **Commits orbit the ring.** A commit sits on the plane of the directory
-  it touched, in the direction of the files it changed, at a distance from
-  the ring that grows with its age (newest just outside the ring, older
-  further out, on a log scale). A commit that touched two directories sits
-  on the line where their planes meet, n₁ × n₂, which is the honest place
-  for a change that straddles modules. Commits drift slowly around their
-  plane's normal, and new ones land with a short animation.
-- **Agents hover above the plane they work on**, with a thin line down to
-  the plane, the point-to-plane distance of the post: queued agents float
-  high, running agents descend as they work, a ready one touches the
-  plane, and a merging one travels to the ring and passes through it.
-  Overlap between in-flight agents is a line between them; a change that
-  needs review waits at its plane with an amber ring.
+- **`main` is the innermost ring, at the origin.** Its commits are beads
+  on the ring. Angle is time: the oldest moment sits at the start of a
+  300° arc, now sits at its end, and the gap marks the present, so a
+  radial line is one moment across the whole history.
+- **Every branch is an arc on a concentric ring.** A task's fork leaves
+  `main` with a short spoke at its base commit, carries its commits as
+  beads along its arc, and folds back with a spoke to the merge bead on
+  `main`. Rings are lanes: a merged branch frees its lane for a later
+  branch whose arc does not overlap it in time, so the picture stays
+  compact however long the history gets.
+- **Agents ride the tip of a live arc**, hovering above the ground by the
+  distance still to go before merging: queued high, descending while
+  running, touching the ground when ready, then travelling to the centre
+  when the lock merges them. A change waiting for review holds at its arc
+  tip with an amber dashed spoke toward `main`. A conflict paints the arc
+  red while the resolver works. Overlap between in-flight work is a line
+  between arc tips.
+- **Files are a quiet layer below the rings**, placed by the index
+  projection and labelled by directory. Selecting a commit or an agent
+  lights the files it touched and draws lines down to them.
 - The ring spins while a merge is in progress and a ripple crosses the
-  ground when one lands.
+  ground when one lands. The timeline replays the rings backwards.
 
 **The chrome (shadcn/ui).**
 

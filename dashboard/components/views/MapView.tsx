@@ -169,7 +169,7 @@ export function MapView({
   return (
     <div className="relative h-full">
       <div className={`absolute inset-y-0 left-0 ${panelWidth} transition-[right] duration-200`}>
-        {shown ? <Scene state={shown} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} activity={activity} dark={dark} /> : null}
+        {shown ? <Scene state={shown} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} activity={activity} dark={dark} now={replayAt ?? now} /> : null}
         <div className="absolute top-3 left-3 glass rounded-lg px-3 py-1.5 mono text-[11px] text-muted-foreground flex items-center gap-4">
           <span>main <span className="text-foreground">{short(shown?.project?.head)}</span></span>
           <span>{shown?.positions.filter((p) => p.kind === "file").length ?? 0} files</span>

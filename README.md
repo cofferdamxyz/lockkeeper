@@ -72,13 +72,12 @@ with the project and its sessions, a home screen with the prompt box
 (one line per agent, auto merge or hold for review), the project bar and
 an on-your-radar list, a session view with the agent's stream beside
 map, diff and decision tabs, and a work list. The Map view is the live
-visualisation of Artifacts: a three.js scene over the Vectorize index
-projected onto fixed axes. Files are points coloured by directory, every
-commit is a point placed near the files it changed, agents are nodes that
-breathe while running and carry ticks for what they are doing, edges join
-in-flight tasks whose work overlaps, and the merge gate stages every
-merge. Click a point to open the file, the commit or the agent's session.
-The timeline at the bottom replays a run.
+visualisation of Artifacts: a three.js scene with `main` as the innermost
+ring and every branch as an arc on a concentric ring outside it, angle as
+time, commits as beads, spokes where a branch leaves and rejoins `main`,
+agents riding the tip of their live arc, and files on a quiet layer below
+that light up for whatever you select. Click a point to open the file, the
+commit or the agent's session. The timeline at the bottom replays a run.
 ⌘K opens the command palette. `GET /api/state`,
 `GET /api/tasks/:id/events` and `GET /api/history` are everything the
 page renders.

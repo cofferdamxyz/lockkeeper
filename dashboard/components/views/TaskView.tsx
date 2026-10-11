@@ -108,7 +108,7 @@ export function TaskView({
               <TabsTrigger value="decision">Decision</TabsTrigger>
             </TabsList>
             <TabsContent value="map" className="flex-1 min-h-0 relative">
-              {state && <Scene state={state} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} activity={{ [task.id]: activity }} dark={dark} focus={task.id} compact />}
+              {state && <Scene state={state} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} activity={{ [task.id]: activity }} dark={dark} now={now} focus={task.id} compact />}
             </TabsContent>
             <TabsContent value="diff" className="flex-1 min-h-0 overflow-auto px-4 pb-4">
               {diff === null ? <p className="text-xs text-muted-foreground">Loading…</p> : diff === "" ? <p className="text-xs text-muted-foreground">No diff yet.</p> : (
