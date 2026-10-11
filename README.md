@@ -1,6 +1,7 @@
 # Lockkeeper
 
-Many coding agents, one repository. Each agent works in its own
+Many coding agents, one repository. A visual coding agent in the spirit
+of GitHub Copilot's, running entirely on Cloudflare. Each agent works in its own
 [Artifacts](https://developers.cloudflare.com/artifacts/) fork; a
 [Vectorize](https://developers.cloudflare.com/vectorize/) index tells each
 agent what the others are doing before it starts; a Workflow asks

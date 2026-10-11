@@ -4,7 +4,9 @@
 
 Lockkeeper lets many coding agents work on one repository at the same time
 without stepping on each other, and decides, change by change, what merges
-into `main`. Each agent works alone in its own Artifacts fork. A Vectorize
+into `main`. It plays the part GitHub's coding agent plays, with two
+differences: everything runs on Artifacts, and the work is visible as it
+happens. Each agent works alone in its own Artifacts fork. A Vectorize
 index of everything in flight tells each agent what the others are doing
 before it starts. When agents finish, a Workflow asks Clef, Cloudflare's
 calibrated decision model, which change should merge next, whether it may
@@ -246,58 +248,58 @@ therefore decided one merge at a time, by Clef, never by arrival order.
 
 ## 7. The dashboard
 
-The interface is the index itself, navigable in three dimensions, live.
+Lockkeeper's user-facing shape is the one GitHub's coding agent made
+familiar: hand over a task, an agent works it in isolation, you watch,
+review and merge. The difference is that all of it runs on Artifacts, and
+that watching is the point: the dashboard is a live map of the work, not a
+list of pull requests.
 
-**On screen.**
+**Stack.** Next.js static export served as the Worker's assets. Pts draws
+the map on a canvas. shadcn/ui (Tailwind 4) is the chrome: everything you
+read or press. Motion moves things between the two. No three.js. Dark by
+default on a neutral scale with one accent, blue, reserved for live agents,
+the gate and the moment a merge lands; a light scheme is a toggle.
 
-- *Repository map.* Every file in the project repository is a point,
-  placed by a three-axis projection of its content embedding (`bge-m3` over
-  the file, chunked and averaged when large), coloured by top-level
-  directory. Modules appear as clusters. `main` is the map.
-- *Agents.* Each task is a lit sphere with a trail. It appears where its
-  goal embeds and drifts to where its diff embeds after each push, so the
-  distance between the two is intent versus result, visible. A push is a
-  pulse; status is the ring colour.
-- *Overlap edges.* An amber-to-red line joins two agents whose cosine
-  similarity or path overlap crosses the thresholds; thickness is
-  strength. These are the pairs Clef is deciding between.
-- *The merge gate.* A structure at the edge of the map. The agent Clef
-  picks travels to it; a card shows the three answers as bars. On an
-  unattended merge the sphere dissolves into the map and the files it
-  touched flare and shift as they are re-embedded. An agent that needs
-  review holds at the gate with an amber ring until approved from the
-  panel.
-- *Panel.* Click an agent: goal, brief, live tail of its output, diff stat,
-  Clef verdicts, approve / retry / abandon. Click a file: the agents
-  touching it and its merge history with the decision behind each commit.
-  The launch form takes one goal per line.
-- *Timeline.* Every event sits in the ledger with a timestamp, so the view
-  replays any run at any speed. The video uses it.
+**The map (Pts).**
 
-**Build.** The UI is a Next.js static export, the same pattern as
-`cofferdam-pages` (`output: "export"`, no server), with React Three Fiber
-and drei; the scene is a client-only component loaded with
-`dynamic(..., { ssr: false })`. The export is served by the Lockkeeper
-Worker as static assets with single-page fallback: one origin, one deploy,
-and Workers Builds builds both. Live state comes from `GET /api/state`
-every two seconds (positions, statuses, edges, verdicts) and
-`GET /api/tasks/:id/tail` for agent output; a server-sent-events stream is
-the upgrade if polling shows on camera.
+- Files sit where the projection puts them; the third axis becomes depth
+  (size and weight). A Voronoi tessellation over the file points turns
+  directories into labelled territories drawn as hairlines.
+- Agents are nodes: hollow while queued, breathing while running, trailing
+  while moving. Status is geometry (dashed ring waiting for a human, a bar
+  when blocked, a cut when failed); colour is spent only on live agents.
+- Overlap between in-flight tasks is a taut line whose weight is the
+  overlap. A conflict makes the line shiver until the resolver re-threads
+  it. Hover a node and its lines lift; hover a file and the agents touching
+  it lift.
+- The lock on the right edge is drawn: two gates and a chamber, `main` as a
+  line beyond it with the head commit. A merge is choreographed: the node
+  enters, the near gate closes, the chamber fills while the tests run, the
+  far gate opens, the node exits into `main`, a ripple crosses the map as it
+  re-indexes. A change that needs review waits at the closed gate.
+- Enter in the launcher spawns a node at the cursor that flies to where its
+  goal embeds. Drag pans, wheel zooms, depth gives parallax.
+- Faint ticks on a node echo its activity (reading, editing, testing), so
+  the map alone says who is doing what.
 
-**Projection.** Positions are computed in the Worker, not the browser. The
-three axes are the top principal components of the file embeddings at the
-run's starting `main` (power iteration over at most a few hundred
-1024-dimension vectors, milliseconds). Files and agents alike are projected
-onto that fixed basis, so the layout holds still while the run unfolds;
-the basis is refit only on an explicit "re-index". Coordinates are stored
-in D1 beside the vectors' metadata, so the browser renders and never
-computes.
+**The chrome (shadcn/ui).**
 
-**Access.** `DASHBOARD_TOKEN` for the demo; Cloudflare Access when
-deployed for Cofferdam. For Cofferdam's own repositories the merge mode is
-a pull request on GitHub (the system of record, with CI and human review
-there) instead of a direct mirror push; the demo uses the mirror so the
-video shows GitHub receiving `main` within seconds of a merge.
+- A command palette (⌘K) launches goals, approves, and jumps to a task or a
+  file.
+- A fleet strip along the bottom lists every live agent as a compact row:
+  status, elapsed time, turns, cost, ticking.
+- A sheet opens on a node or a row with tabs: overview (goal, files,
+  diffstat, result), activity (the agent's parsed stream: file reads and
+  edits, commands, notes, the final summary), diff, decision (Clef's
+  answers as gauges with the threshold mark). Approve is the only accented
+  action; retry and abandon are plain.
+- Toasts announce ready, merged, conflict, needs review.
+- A timeline along the bottom carries a tick per status change, decision and
+  merge, and scrubs the run for replay.
+
+**Data.** `GET /api/state` every two seconds, `GET /api/tasks/:id/events`
+for the parsed activity, `GET /api/history` for the timeline. A
+server-sent stream is the upgrade if polling shows on camera.
 
 ## 8. Isolation and secrets
 
