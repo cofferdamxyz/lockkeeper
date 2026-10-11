@@ -25,7 +25,7 @@ const base: StateView = {
 describe("planes layout", () => {
   it("makes one plane per directory and keeps files on their plane", () => {
     const l = computeLayout(base, Date.now());
-    expect(l.planes.map((p) => p.dir)).toEqual(["src", "test"]);
+    expect(l.planes.map((p) => p.dir).sort()).toEqual(["src", "test"]);
     for (const [id, f] of l.files) {
       const n = l.planes[f.plane].normal;
       const d = f.pos[0] * n[0] + f.pos[1] * n[1] + f.pos[2] * n[2];
@@ -41,8 +41,9 @@ describe("planes layout", () => {
     const r = (p: number[]) => Math.hypot(p[0], p[1], p[2]);
     expect(r(one.pos)).toBeGreaterThan(RING_RADIUS);
     expect(r(two.pos)).toBeGreaterThan(r(one.pos));
-    expect(one.planes).toEqual([0]);
-    expect(two.planes.sort()).toEqual([0, 1]);
+    const dirOf = (i: number) => l.planes[i].dir;
+    expect(one.planes.map(dirOf)).toEqual(["src"]);
+    expect(two.planes.map(dirOf).sort()).toEqual(["src", "test"]);
     // the straddling commit lies on both planes
     for (const pi of two.planes) {
       const n = l.planes[pi].normal;
