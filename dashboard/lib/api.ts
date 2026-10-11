@@ -59,6 +59,19 @@ export interface MergeView {
   at: string;
 }
 
+export type ActivityEvent =
+  | { kind: "start"; model?: string }
+  | { kind: "note"; text: string }
+  | { kind: "tool"; name: string; summary: string; path?: string }
+  | { kind: "result"; ok: boolean; text: string }
+  | { kind: "done"; ok: boolean; text: string; costUsd?: number; turns?: number; durationMs?: number };
+
+export type HistoryItem =
+  | { at: string; kind: "status"; task: string; status: TaskStatus }
+  | { at: string; kind: "decision"; id: string; chosen: string | null; candidates: string[] }
+  | { at: string; kind: "merge"; task: string; mode: string; mainAfter: string | null; conflict: boolean; resolvedBy: string | null }
+  | { at: string; kind: "push"; ref: string; sha: string | null };
+
 export interface StateView {
   project: { id: string; repo: string; remote: string | null; defaultBranch: string; head: string | null; hasMap: boolean } | null;
   config: { clef: { model: string; unattended: number; unattendedAfterResolve: number; maxRisk: number; maxCandidates: number }; agents: { model: string; maxMinutes: number } };
@@ -121,19 +134,6 @@ export async function apiText(path: string): Promise<string> {
   return res.text();
 }
 
-export const STATUS_COLOR: Record<TaskStatus, string> = {
-  queued: "#7f8aa3",
-  running: "#3C8AFF",
-  ready: "#f2c14e",
-  merging: "#ff9f43",
-  needs_review: "#f2a93b",
-  approved: "#ffd166",
-  merged: "#2ecc71",
-  blocked: "#d64fcf",
-  failed: "#ff5d5d",
-  abandoned: "#4b5366",
-};
-
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   queued: "Queued",
   running: "Running",
@@ -147,9 +147,36 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   abandoned: "Abandoned",
 };
 
-export function dirColor(dir: string | undefined): string {
-  const palette = ["#5aa9ff", "#7bd389", "#ffb86b", "#c792ea", "#ff8fa3", "#5ad1c9", "#e6d36a", "#9fb4ff"];
-  let h = 0;
-  for (const ch of dir ?? ".") h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return palette[h % palette.length];
+export const LIVE: TaskStatus[] = ["queued", "running", "ready", "merging", "approved", "needs_review", "blocked"];
+export const isLive = (s: TaskStatus) => LIVE.includes(s);
+
+/** Statuses as they were at `at`, replayed from the history, for the timeline. */
+export function replayState(state: StateView, history: HistoryItem[], at: number): StateView {
+  const statusAt = new Map<string, TaskStatus>();
+  for (const h of history) {
+    if (new Date(h.at).getTime() > at) break;
+    if (h.kind === "status") statusAt.set(h.task, h.status);
+  }
+  const tasks = state.tasks
+    .filter((t) => new Date(t.createdAt).getTime() <= at)
+    .map((t) => ({ ...t, status: statusAt.get(t.id) ?? "queued" }));
+  const live = new Set(tasks.filter((t) => isLive(t.status)).map((t) => t.id));
+  return {
+    ...state,
+    tasks,
+    edges: state.edges.filter((e) => live.has(e.a) && live.has(e.b)),
+    merges: state.merges.filter((m) => new Date(m.at).getTime() <= at),
+    decisions: state.decisions.filter((d) => new Date(d.at).getTime() <= at),
+  };
+}
+
+export function elapsed(from: string, to: number = Date.now()): string {
+  const s = Math.max(0, Math.round((to - new Date(from).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+export function short(sha: string | null | undefined): string {
+  return sha ? sha.slice(0, 7) : "—";
 }
