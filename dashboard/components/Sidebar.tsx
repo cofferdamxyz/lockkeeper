@@ -46,10 +46,11 @@ export function Sidebar({
   const active = (href: string) => (href === "/" ? route === "/" : route.startsWith(href));
   return (
     <aside className={`h-full border-r bg-sidebar text-sidebar-foreground flex flex-col ${collapsed ? "w-14" : "w-64"} transition-[width] duration-200`}>
-      <div className="h-12 flex items-center gap-2 px-3">
-        <span className="size-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0" />
+      {/* Collapsed, the column is one icon wide: the toggle stands alone and the footer stacks. */}
+      <div className={`h-12 flex items-center gap-2 ${collapsed ? "justify-center" : "px-3"}`}>
+        {!collapsed && <span className="size-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)] shrink-0" />}
         {!collapsed && <span className="text-sm font-semibold tracking-tight">Lockkeeper</span>}
-        <Button variant="ghost" size="icon" className="ml-auto size-7" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={onToggle}>
+        <Button variant="ghost" size="icon" className={collapsed ? "size-8" : "ml-auto size-7"} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={onToggle}>
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
         </Button>
       </div>
@@ -110,7 +111,7 @@ export function Sidebar({
       )}
       <div className="mt-auto flex flex-col">
         {!collapsed && setup && <GettingStarted steps={setup} busy={busy} />}
-        <div className="p-2 flex items-center gap-1 border-t">
+        <div className={`p-2 flex items-center gap-1 border-t ${collapsed ? "flex-col" : ""}`}>
           {!collapsed && <span className="mono text-[11px] text-muted-foreground truncate px-1 flex-1" title={host}>{host}</span>}
           <Button variant="ghost" size="icon" className="size-8" aria-label="Toggle colour scheme" onClick={onToggleTheme}>
             {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
