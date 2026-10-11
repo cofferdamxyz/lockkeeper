@@ -64,19 +64,27 @@ export function computeLayout(state: StateView, now: number): Layout {
     byDir.set(d, [...(byDir.get(d) ?? []), f]);
   }
   const dirs = [...byDir.keys()].sort();
-  const planes: PlaneSpec[] = dirs.map((dir, i) => {
+  // Each plane's azimuth comes from where its files sit in the index, then the azimuths are
+  // spread evenly so no two planes lie on top of each other; the tilt stays moderate so every
+  // plane reads from the default camera.
+  const seeds = dirs.map((dir) => {
     const pts = byDir.get(dir)!;
     const c = pts.reduce<Vec3>((s, p) => add(s, [p.x, p.y, p.z]), [0, 0, 0]);
     const centroid = mul(c, 1 / pts.length);
-    // Tilt the plane toward where the directory lives; a flat centroid gets a seeded tilt.
-    let normal = norm([centroid[0], centroid[1] + 0.25, centroid[2]]);
-    if (len(centroid) < 0.05) normal = seededUnit(dir);
-    // keep planes from being edge-on to the camera: blend with the up vector
-    normal = norm(add(mul(normal, 0.75), [0, 0.6, 0]));
+    const seed = len(centroid) < 0.05 ? seededUnit(dir) : norm(centroid);
+    return { dir, azimuth: Math.atan2(seed[2], seed[0]), elevation: seed[1] };
+  });
+  const order = [...seeds].sort((a, b) => a.azimuth - b.azimuth);
+  const step = (Math.PI * 2) / Math.max(1, order.length);
+  const planes: PlaneSpec[] = order.map((sd, i) => {
+    const az = order.length === 1 ? sd.azimuth : i * step + step * 0.5;
+    const tilt = 0.55 + 0.25 * Math.max(-1, Math.min(1, sd.elevation)); // radians from vertical
+    const normal = norm([Math.cos(az) * Math.sin(tilt), Math.cos(tilt), Math.sin(az) * Math.sin(tilt)]);
     const helper: Vec3 = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     const u = norm(cross(helper, normal));
     const v = norm(cross(normal, u));
-    return { dir, normal, u, v, color: PLANE_COLORS[i % PLANE_COLORS.length], files: pts.length };
+    const idx = dirs.indexOf(sd.dir);
+    return { dir: sd.dir, normal, u, v, color: PLANE_COLORS[idx % PLANE_COLORS.length], files: byDir.get(sd.dir)!.length };
   });
   const planeIndex = new Map(planes.map((p, i) => [p.dir, i]));
 

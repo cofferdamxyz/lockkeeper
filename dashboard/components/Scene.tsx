@@ -374,7 +374,7 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
               base={c.pos}
               normal={n}
               orbit={c.planes.length === 1}
-              radius={p.meta?.merge ? 0.09 : 0.065}
+              radius={p.meta?.merge ? 0.1 : 0.08}
               color={BLUE}
               lit={lit}
               label={`${p.meta?.sha?.slice(0, 7) ?? ""} ${p.label}`}
