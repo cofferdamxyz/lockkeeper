@@ -32,15 +32,18 @@ export function Timeline({
         <div className="absolute left-0 right-0 top-1/2 h-px bg-border" />
         {history.map((h, i) => {
           const t = new Date(h.at).getTime();
+          // amber waits for a person, red failed, blue a person approved, white landed unattended
           const cls =
             h.kind === "merge"
               ? h.conflict
                 ? "bg-red-400"
                 : h.mode === "needs_review" || h.mode === "error"
                   ? "bg-amber-400"
-                  : "bg-blue-500"
+                  : h.mode === "approved"
+                    ? "bg-blue-500"
+                    : "bg-foreground/85"
               : h.kind === "decision"
-                ? "bg-foreground/70"
+                ? "bg-foreground/50"
                 : h.kind === "push"
                   ? "bg-foreground/30"
                   : "bg-foreground/15";

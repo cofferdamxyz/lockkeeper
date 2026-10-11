@@ -15,10 +15,11 @@ export function StatusIcon({ status, className = "size-4" }: { status: TaskStatu
     case "merging":
       return <GitMerge className={`${className} text-blue-500`} />;
     case "needs_review":
-    case "approved":
       return <GitPullRequest className={`${className} text-amber-500`} />;
+    case "approved":
+      return <GitPullRequest className={`${className} text-blue-500`} />;
     case "merged":
-      return <CheckCircle2 className={`${className} text-emerald-500`} />;
+      return <CheckCircle2 className={`${className} text-foreground/80`} />;
     case "blocked":
       return <OctagonAlert className={`${className} text-red-400`} />;
     case "failed":

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { StateView, TaskView } from "./api";
-import { arc, buildCity, chamberIndex, cochange, H, layoutPaths, litFor, pickWindow, polarRoute, seriate, timeAtHeight } from "./city";
+import { arc, buildCity, buildTimeScale, chamberIndex, cochange, FOLD_EFF_MS, H, layoutPaths, litFor, pickWindow, polarRoute, seriate, timeAtHeight } from "./city";
 
 const NOW = Date.parse("2026-10-11T12:00:00Z");
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
@@ -160,6 +160,39 @@ describe("buildCity", () => {
   });
 });
 
+describe("buildTimeScale", () => {
+  const HOUR = 60 * 60_000;
+  it("is linear without any activity", () => {
+    const s = buildTimeScale(NOW, 2 * HOUR, []);
+    expect(s.folds).toHaveLength(0);
+    expect(s.yAt(NOW - HOUR)).toBeCloseTo(H / 2);
+    expect(s.timeAt(H / 2)).toBeCloseTo(NOW - HOUR);
+  });
+  it("folds a quiet stretch so the last session fills the column", () => {
+    // a session twelve hours ago, then nothing until now
+    const session = [NOW - 12 * HOUR, NOW - 11.5 * HOUR, NOW - 11 * HOUR];
+    const s = buildTimeScale(NOW, 24 * HOUR, session);
+    expect(s.folds.length).toBeGreaterThanOrEqual(2);
+    const quiet = s.folds.find((f) => f.to === NOW)!;
+    expect(quiet.y1 - quiet.y0).toBeLessThan(0.3);
+    const sessionHeight = s.yAt(NOW - 11 * HOUR) - s.yAt(NOW - 12 * HOUR);
+    expect(sessionHeight).toBeGreaterThan(H * 0.6);
+    expect(s.busyMs).toBeLessThan(2 * HOUR);
+  });
+  it("keeps height monotonic and inverts it inside and outside folds", () => {
+    const s = buildTimeScale(NOW, 6 * HOUR, [NOW - 5 * HOUR, NOW - 30 * 60_000, NOW]);
+    let prev = -1;
+    for (let t = s.start; t <= NOW; t += 5 * 60_000) {
+      const y = s.yAt(t);
+      expect(y).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = y;
+      expect(s.timeAt(y)).toBeCloseTo(t, -2);
+    }
+    const f = s.folds[0];
+    expect(s.yAt(f.to) - s.yAt(f.from)).toBeCloseTo((H * FOLD_EFF_MS) / (s.busyMs + s.folds.length * FOLD_EFF_MS), 3);
+  });
+});
+
 describe("window and column helpers", () => {
   it("picks a window that holds every live task", () => {
     const s = state({ tasks: [task("t-old", { status: "running", createdAt: ago(200) })] });
@@ -173,7 +206,7 @@ describe("window and column helpers", () => {
   });
   it("lowers the moment shown while replaying", () => {
     const s = state({ tasks: [task("t-1", { status: "running", files: ["a.ts"] })], positions: [file("a.ts")] });
-    const city = buildCity(s, { now: NOW, windowMs: 60 * 60_000, activity: {}, at: NOW - 30 * 60_000 });
+    const city = buildCity(s, { now: NOW, windowMs: 60 * 60_000, activity: {}, at: NOW - 30 * 60_000, anchors: [] });
     expect(city.top).toBeCloseTo(H / 2);
     expect(city.byTask.get("t-1")!.yEnd).toBeCloseTo(H / 2);
     expect(city.agents[0].pos[1]).toBeGreaterThan(H / 2);

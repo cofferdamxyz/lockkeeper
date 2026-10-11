@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { type ActivityEvent, api, type CommitDetail, elapsed, type FileDetail, HOLDABLE, type HistoryItem, navigate, short, type StateView, STATUS_LABEL, type TaskAction, type TaskView } from "@/lib/api";
-import { buildCity, type City as CityModel, type LockCandidate, windowLabel } from "@/lib/city";
+import { buildCity, type City as CityModel, type LockCandidate, timeAnchors, windowLabel } from "@/lib/city";
 import { recoverChunk } from "@/lib/lazy";
 
 const City = dynamic(recoverChunk(() => import("@/components/City")), { ssr: false, loading: () => <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">Loading the scene…</div> });
@@ -291,9 +291,9 @@ function LockPanel({ lock, selected, onSelect, onReorder }: { lock: LockCandidat
 const LEGEND: [string, string][] = [
   ["block", "a file: height is size, brightness is recent change; translucent means added by a fork and not on main yet"],
   ["ring", "directory depth; a sector is a directory, files that change together sit side by side"],
-  ["plate", "a commit over the files it touched; height is time, the window is the control at the top"],
-  ["stack", "a branch: commits A, then B, then C; dashed holds for review, red failed or blocked"],
-  ["column", "main; a ring on it is a merge (white unattended, amber resolved, blue approved), spokes point at what landed"],
+  ["plate", "a commit over the files it touched; height is time, and a quiet stretch folds into a short break"],
+  ["stack", "a branch: commits A, then B, then C; amber dashed waits for you, red failed or blocked"],
+  ["column", "main; a ring on it is a merge: white landed unattended, blue a person approved, a double ring resolved a conflict first"],
   ["chamber", "the discs under the now ring are the changes waiting to enter main, in the order they will; drag to reorder"],
   ["beacon", "an agent over the file it is on now; a red halo marks two agents changing one file"],
   ["now ring", "drag it down the column to replay; the timeline below does the same"],
@@ -343,7 +343,9 @@ export function MapView({
   const projectId = state?.project?.id ?? "sample-api";
   // The clock ticks every second; the strata only need to move every few seconds.
   const cityNow = Math.floor(now / 5000) * 5000;
-  const city = useMemo(() => (shown ? buildCity(shown, { now: cityNow, windowMs, activity, at: replayAt }) : null), [shown, cityNow, windowMs, activity, replayAt]);
+  // Folds come from the full history, so replay lowers the ring without reshaping the column.
+  const anchors = useMemo(() => (state ? timeAnchors(state, cityNow) : []), [state, cityNow]);
+  const city = useMemo(() => (shown ? buildCity(shown, { now: cityNow, windowMs, activity, at: replayAt, anchors }) : null), [shown, cityNow, windowMs, activity, replayAt, anchors]);
   const [legend, setLegend] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

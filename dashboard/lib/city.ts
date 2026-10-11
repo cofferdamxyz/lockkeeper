@@ -296,11 +296,13 @@ export interface CityAgent {
 export interface CityTick {
   y: number;
   label: string;
+  major: boolean;
 }
 
 export interface City {
   now: number;
   windowMs: number;
+  scale: TimeScale;
   /** Height of the moment shown: the top of the window live, lower while replaying. */
   top: number;
   files: CityFile[];
@@ -334,6 +336,110 @@ export function branchState(s: TaskStatus): BranchState {
 
 const MINUTE = 60_000;
 const WINDOWS = [30, 60, 90, 180, 360, 720, 1440, 2880].map((m) => m * MINUTE);
+
+// ---------------------------------------------------------------- the time scale
+
+/** A quiet stretch longer than this folds into a short break on the column. */
+export const FOLD_GAP_MS = 20 * MINUTE;
+/** What a folded stretch counts as, so the break stays visible. */
+export const FOLD_EFF_MS = 3 * MINUTE;
+/** Room kept around any activity before a fold may start. */
+export const FOLD_PAD_MS = 4 * MINUTE;
+
+export interface Fold {
+  from: number;
+  to: number;
+  y0: number;
+  y1: number;
+}
+
+export interface TimeScale {
+  now: number;
+  start: number;
+  folds: Fold[];
+  /** Real time shown at full height. */
+  busyMs: number;
+  yAt: (t: number) => number;
+  timeAt: (y: number) => number;
+}
+
+const clamp01 = (k: number) => Math.max(0, Math.min(1, k));
+
+/**
+ * Two-speed time: stretches with activity take the column at one rate, and quiet stretches
+ * between them fold into short breaks, so the last session fills the column however long
+ * ago it was. With no activity at all the scale is plain linear.
+ */
+export function buildTimeScale(now: number, windowMs: number, anchors: number[]): TimeScale {
+  const start = now - windowMs;
+  const pts = [...new Set(anchors.filter((t) => Number.isFinite(t) && t >= start && t <= now))].sort((a, b) => a - b);
+  const busy: [number, number][] = [];
+  for (const t of pts) {
+    const a = Math.max(start, t - FOLD_PAD_MS);
+    const b = Math.min(now, t + FOLD_PAD_MS);
+    const last = busy[busy.length - 1];
+    if (last && a - last[1] <= FOLD_GAP_MS) last[1] = Math.max(last[1], b);
+    else busy.push([a, b]);
+  }
+  const raw: { from: number; to: number; len: number }[] = [];
+  if (busy.length > 0) {
+    let cursor = start;
+    for (const [a, b] of busy) {
+      if (a - cursor > FOLD_GAP_MS) raw.push({ from: cursor, to: a, len: a - cursor });
+      cursor = Math.max(cursor, b);
+    }
+    if (now - cursor > FOLD_GAP_MS) raw.push({ from: cursor, to: now, len: now - cursor });
+  }
+  const eff = (t: number) => {
+    let e = t;
+    for (const f of raw) {
+      if (t >= f.to) e -= f.len - FOLD_EFF_MS;
+      else if (t > f.from) {
+        e -= (t - f.from) * (1 - FOLD_EFF_MS / f.len);
+        break;
+      } else break;
+    }
+    return e;
+  };
+  const effNow = eff(now);
+  const total = Math.max(1, effNow - eff(start));
+  const yAt = (t: number) => H * clamp01(1 - (effNow - eff(t)) / total);
+  const timeAt = (y: number) => {
+    const target = effNow - (1 - clamp01(y / H)) * total;
+    let removed = 0;
+    for (const f of raw) {
+      const effFrom = f.from - removed;
+      if (target <= effFrom) break;
+      if (target < effFrom + FOLD_EFF_MS) return f.from + (target - effFrom) * (f.len / FOLD_EFF_MS);
+      removed += f.len - FOLD_EFF_MS;
+    }
+    return target + removed;
+  };
+  const folds: Fold[] = raw.map((f) => ({ from: f.from, to: f.to, y0: yAt(f.from), y1: yAt(f.to) }));
+  return { now, start, folds, busyMs: windowMs - raw.reduce((s, f) => s + f.len, 0), yAt, timeAt };
+}
+
+/** Moments worth keeping at full height: commits, merges, task starts and ends, and now if anything is live. */
+export function timeAnchors(state: StateView, now: number): number[] {
+  const out: number[] = [];
+  for (const p of state.positions) if (p.kind === "commit" && p.meta?.at) out.push(new Date(p.meta.at).getTime());
+  for (const m of state.merges) out.push(new Date(m.at).getTime());
+  for (const t of state.tasks) {
+    out.push(new Date(t.createdAt).getTime(), new Date(t.updatedAt).getTime());
+    if (LIVE_STATUSES.includes(t.status)) out.push(now);
+  }
+  return out;
+}
+
+export function durationLabel(ms: number): string {
+  const m = Math.round(ms / MINUTE);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return m % 60 === 0 || h >= 6 ? `${h}h` : `${h}h ${m % 60}m`;
+  return `${Math.round(h / 24)}d`;
+}
+
+const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /** The smallest standard window that holds every live task and the last four merges, at least an hour. */
 export function pickWindow(state: StateView, now: number): number {
@@ -376,11 +482,14 @@ export interface BuildOptions {
   activity: Record<string, ActivityEvent[]>;
   /** The moment shown while replaying; null or undefined means live. */
   at?: number | null;
+  /** Moments that keep the column at full height; defaults to the state's own. */
+  anchors?: number[];
 }
 
 export function buildCity(state: StateView, opts: BuildOptions): City {
   const { now, windowMs, activity } = opts;
-  const yAt = (t: number) => Math.max(0, Math.min(H, H * (1 - (now - t) / windowMs)));
+  const scale = buildTimeScale(now, windowMs, opts.anchors ?? timeAnchors(state, now));
+  const yAt = scale.yAt;
   const top = opts.at == null ? H : yAt(opts.at);
   const tasks = new Map(state.tasks.map((t) => [t.id, t]));
 
@@ -573,18 +682,18 @@ export function buildCity(state: StateView, opts: BuildOptions): City {
   const overlaps = new Map<string, string[]>();
   for (const [p, s] of touchers) if (s.size >= 2) overlaps.set(p, [...s]);
 
-  // ticks up the column
-  const ticks: CityTick[] = [{ y: H, label: "now" }];
-  const step = windowMs <= 180 * MINUTE ? 15 * MINUTE : windowMs <= 720 * MINUTE ? 60 * MINUTE : 6 * 60 * MINUTE;
-  // Every tick is drawn; only every second one is labelled, so the column stays readable.
-  const labelEvery = step * 2;
-  for (let m = step; m < windowMs; m += step) {
-    const y = yAt(now - m);
-    const label = m % labelEvery !== 0 ? "" : m % (60 * MINUTE) === 0 ? `−${m / (60 * MINUTE)}h` : `−${m / MINUTE}m`;
-    ticks.push({ y, label });
+  // ticks up the column: clock times inside the stretches shown at full height, none inside a fold
+  const ticks: CityTick[] = [];
+  const step = scale.busyMs <= 180 * MINUTE ? 15 * MINUTE : scale.busyMs <= 720 * MINUTE ? 60 * MINUTE : 6 * 60 * MINUTE;
+  const inFold = (t: number) => scale.folds.some((f) => t > f.from && t < f.to);
+  for (let t = Math.ceil(scale.start / step) * step; t < now; t += step) {
+    if (inFold(t)) continue;
+    const major = step >= 60 * MINUTE || t % (60 * MINUTE) === 0;
+    const label = step < 60 * MINUTE && t % (30 * MINUTE) !== 0 ? "" : clock(t);
+    ticks.push({ y: yAt(t), label, major });
   }
 
-  return { now, windowMs, top, files, byPath, sectors, commits, branches, byTask, merges, lock, agents, overlaps, ticks, maxRadius, yAt };
+  return { now, windowMs, scale, top, files, byPath, sectors, commits, branches, byTask, merges, lock, agents, overlaps, ticks, maxRadius, yAt };
 }
 
 // ---------------------------------------------------------------- selection
@@ -692,5 +801,5 @@ export function chamberIndex(y: number, count: number, top = H): number {
 export function timeAtHeight(city: City, y: number): number | null {
   const k = Math.max(0, Math.min(1, y / H));
   if (k >= 0.985) return null;
-  return city.now - (1 - k) * city.windowMs;
+  return city.scale.timeAt(y);
 }

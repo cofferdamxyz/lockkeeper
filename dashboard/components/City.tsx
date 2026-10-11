@@ -10,6 +10,7 @@ import {
   AMBER,
   arc,
   buildCity,
+  durationLabel,
   CERULEAN,
   chamberIndex,
   CHAMBER_STEP,
@@ -517,15 +518,19 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
   const capture = (e: ThreeEvent<PointerEvent>) => (e.target as unknown as { setPointerCapture(id: number): void }).setPointerCapture(e.pointerId);
   const release = (e: ThreeEvent<PointerEvent>) => (e.target as unknown as { releasePointerCapture(id: number): void }).releasePointerCapture(e.pointerId);
   const chamber = drag?.kind === "chamber" ? drag.order.map((id, i) => ({ ...city.lock.find((c) => c.task.id === id)!, index: i, y: city.top - CHAMBER_STEP * (i + 1) })) : city.lock;
-  // Merge labels: the latest few at rest, never two within a hair of each other, sides alternating.
+  // Merge labels: at most three, the latest lit ones, never two within a hair of each other,
+  // sides alternating; the picked one always. The panel carries the rest.
   const labelled = useMemo(() => {
     const out = new Map<number, "left" | "right">();
     const kept: number[] = [];
     const recent = [...city.merges].filter((m) => m.y > 0.001).sort((a, b) => b.at - a.at);
     for (const m of recent) {
-      const on = lit.merges.has(m.id) || (lit.rest && kept.length < 4);
-      if (!on && picked !== `merge:${m.id}`) continue;
-      if (kept.some((y) => Math.abs(y - m.y) < 0.11) && picked !== `merge:${m.id}`) continue;
+      const id = `merge:${m.id}`;
+      const on = lit.merges.has(m.id) || lit.rest;
+      if (picked !== id) {
+        if (!on || kept.length >= 3) continue;
+        if (kept.some((y) => Math.abs(y - m.y) < 0.11)) continue;
+      }
       kept.push(m.y);
       out.set(m.id, kept.length % 2 === 1 ? "left" : "right");
     }
@@ -554,10 +559,10 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
           </div>
         </Html>
       )}
-      {/* ticks */}
-      {city.ticks.filter((t) => t.y < H - 0.01).map((t, i) => (
+      {/* ticks: clock times, none inside a fold */}
+      {city.ticks.filter((t) => t.y < H - 0.01 && t.y > 0.01).map((t, i) => (
         <group key={i}>
-          <Ring r={t.label.endsWith("h") ? 0.14 : 0.09} tube={0.004} y={t.y} color={p.ring} emissive={0.3} />
+          <Ring r={t.major ? 0.14 : 0.09} tube={0.004} y={t.y} color={p.ring} emissive={0.3} />
           {!compact && t.label && (
             <Html position={[0, t.y, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
               <div className="scene-tick">{t.label}</div>
@@ -565,14 +570,32 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
           )}
         </group>
       ))}
-      {/* merges */}
+      {/* folds: a quiet stretch shown as a short break in the column */}
+      {city.scale.folds.filter((f) => f.y1 - f.y0 > 0.005).map((f, i) => (
+        <group key={`fold-${i}`}>
+          <mesh position={[0, (f.y0 + f.y1) / 2, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, Math.max(0.01, f.y1 - f.y0), 10]} />
+            <meshBasicMaterial color={p.bg} />
+          </mesh>
+          <Line points={[[0, f.y0, 0], [0, f.y1, 0]]} color={p.ring} lineWidth={1.2} dashed dashSize={0.02} gapSize={0.02} />
+          <Ring r={0.07} tube={0.004} y={f.y0} color={p.ring} emissive={0.2} />
+          <Ring r={0.07} tube={0.004} y={f.y1} color={p.ring} emissive={0.2} />
+          {!compact && (
+            <Html position={[-0.12, (f.y0 + f.y1) / 2, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+              <div className="scene-tick fold">{durationLabel(f.to - f.from)} quiet</div>
+            </Html>
+          )}
+        </group>
+      ))}
+      {/* merges: white landed unattended, blue a person approved, a double ring resolved a conflict first */}
       {city.merges.filter((m) => m.y > 0.001).map((m) => {
         const on = lit.merges.has(m.id) || lit.rest;
-        const color = m.kind === "approved" ? CERULEAN : m.kind === "resolved" ? AMBER : p.settled;
+        const color = m.kind === "approved" ? CERULEAN : p.settled;
         const id = `merge:${m.id}`;
         return (
           <group key={m.id}>
             <Ring r={COLUMN_R} tube={picked === id ? 0.014 : 0.008} y={m.y} color={on ? color : tint(color, p.dimK)} emissive={on ? 0.8 : 0.2} onClick={() => onSelect(id)} onHover={(h) => onHover(h ? id : null)} />
+            {m.kind === "resolved" && <Ring r={COLUMN_R + 0.055} tube={0.005} y={m.y} color={on ? color : tint(color, p.dimK)} emissive={on ? 0.6 : 0.15} opacity={0.9} />}
             {!compact && labelled.has(m.id) && (
               <Html position={[labelled.get(m.id) === "left" ? -0.3 : 0.3, m.y, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
                 <div className={`scene-label ${labelled.get(m.id) === "left" ? "right" : ""}`}>

@@ -6,13 +6,20 @@ import { elapsed, isLive, navigate, STATUS_LABEL, type TaskView } from "@/lib/ap
 
 const ATTENTION = new Set(["needs_review", "blocked", "failed"]);
 
-export function Radar({ tasks, projectId, now, limit = 8, title = "On your radar" }: { tasks: TaskView[]; projectId: string; now: number; limit?: number; title?: string }) {
+export function Radar({ tasks, projectId, now, limit = 8 }: { tasks: TaskView[]; projectId: string; now: number; limit?: number }) {
   const rank = (t: TaskView) => (ATTENTION.has(t.status) ? 0 : isLive(t.status) ? 1 : 2);
   const rows = [...tasks].sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit);
+  const attention = tasks.filter((t) => ATTENTION.has(t.status)).length;
+  const live = tasks.filter((t) => isLive(t.status)).length;
+  // The heading says what the list is for right now; "all clear" is a state, not an absence.
+  const title = attention > 0 ? "Needs you" : live > 0 ? "In flight" : "Recent";
   return (
     <section className="w-full">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-lg font-semibold tracking-tight">
+          {title}
+          {attention === 0 && tasks.length > 0 && <span className="ml-3 text-xs font-normal text-muted-foreground">Nothing needs you</span>}
+        </h2>
         <Button variant="link" size="sm" className="text-muted-foreground" onClick={() => navigate("/tasks")}>
           View all
         </Button>

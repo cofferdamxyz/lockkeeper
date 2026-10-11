@@ -285,10 +285,12 @@ Inter. three.js through React Three Fiber draws the map as a camera scene
 in the language of Alex Harri's *Planes*: a near-black ground grid tinted
 blue, thin lines, glassy plates, phong spheres, a tilted camera that
 slowly orbits until you take it. shadcn/ui (Tailwind 4) is the chrome.
-Dark by default; a light scheme is a toggle. Colour has one grammar: hue
-means directory, the saturated accents mean agents, red and amber mean
-status, and blue is reserved for the lock, the now ring and a merge a
-person approved.
+Dark by default; a light scheme is a toggle. Colour has one grammar, on
+the map and in every list: hue means directory, the saturated accents
+mean agents, amber means a change waits for a person, red means failed
+or blocked, blue means the lock is acting (the lock ring, the now ring,
+merging, a person's approval), and white means landed unattended. A
+merge the resolver reconciled first is a double ring, not a colour.
 
 **The map: the strata city.** The repository is the floor, time rises
 above it, and `main` is the column at the lock.
@@ -301,9 +303,14 @@ above it, and `main` is the column at the lock.
   beside the source directory it changes with. The floor is `main`'s
   tree; a file a fork adds before it lands is a translucent ghost in its
   sector, and a file a merge removed inside the window stays as a ghost.
-- **Height is time.** The window is a control (auto, 1h, 3h, 12h, 2d);
-  auto is the smallest standard window that holds every live task and the
-  last four merges. Older history sinks into the floor's brightness.
+- **Height is time, at two speeds.** The window is a control (auto, 1h,
+  3h, 12h, 2d); auto is the smallest standard window that holds every
+  live task and the last four merges. Inside it, stretches with activity
+  take the column at one rate and quiet stretches longer than twenty
+  minutes fold into short breaks marked on the column with their length,
+  so the last session fills the column however long ago it was. Ticks
+  are clock times inside the stretches shown at full height. Older
+  history sinks into the floor's brightness.
 - **Plates are commits**, laid over the files each one touched. A stack
   over one footprint is a branch, A then B then C. Commits reach the map
   as they happen: while an agent works, the sandbox pushes each new
@@ -314,10 +321,11 @@ above it, and `main` is the column at the lock.
   spans files is linked along the rings (polar routing), never through
   the column.
 - **The column is `main`.** A ring on it is a merge: white when Clef
-  cleared it unattended, amber when the resolver agent reconciled a
-  conflict first, blue when a person approved it. Spokes point at the
-  files that landed. Ticks mark every fifteen minutes (hourly or
-  six-hourly on long windows).
+  cleared it unattended, blue when a person approved it, and a double
+  ring when the resolver agent reconciled a conflict first. Spokes point
+  at the files that landed. At most three merges carry a label at a
+  time, the latest lit ones plus the picked one; the panel lists the
+  rest.
 - **The lock chamber.** The discs stacked under the now ring are the
   changes waiting to enter `main`, in the order they will: merging now,
   approved, pinned, then Clef's choice, then held for review. Dragging a
@@ -530,6 +538,13 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11 (evening, after a design critique): time runs at two speeds
+  on the column, with quiet stretches folded into labelled breaks and
+  clock-time ticks; merge labels capped at three; one colour grammar
+  across the map and the lists (amber waits for a person, red failed,
+  blue the lock acting, white landed, a double ring for a resolved
+  conflict); the home screen opens with a fleet summary and a radar
+  that says what it is for.
 - 2026-10-11 (afternoon): hold and release on any change in flight
   (`POST /api/tasks/:id/hold`); a released change re-enters the lock. The
   sandbox gives the agent a git identity. A page that outlived a deploy

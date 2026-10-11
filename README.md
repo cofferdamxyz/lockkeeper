@@ -77,9 +77,11 @@ The Map view is the strata city: the repository is the floor (rings are
 directory depth, sectors are directories, blocks are files, with files
 that change together side by side), time rises above it, and `main` is
 the column at the lock. Commits are plates over the files they touched
-and a stack is a branch; a ring on the column is a merge (white
-unattended, amber resolved by the resolver agent, blue approved by a
-person) with spokes to what landed; the discs under the now ring are the
+and a stack is a branch, with quiet stretches folded into short breaks
+so the last session always fills the column; a ring on the column is a
+merge (white landed unattended, blue approved by a person, a double ring
+when the resolver agent reconciled a conflict first) with spokes to what
+landed; the discs under the now ring are the
 changes waiting to enter `main` in the order they will, and dragging one
 pins that order; agents hover over the file they are on now; a red halo
 marks a file two agents are changing. Click anything to light its

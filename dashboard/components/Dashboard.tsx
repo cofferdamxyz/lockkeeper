@@ -18,7 +18,7 @@ import { pickWindow } from "@/lib/city";
 
 const ANNOUNCE: Partial<Record<TaskStatus, (t: TaskRow) => void>> = {
   ready: (t) => toast(`${t.id.slice(-4)} is ready`, { description: t.goal.slice(0, 80) }),
-  merged: (t) => toast.success(`${t.id.slice(-4)} merged into main`, { description: t.goal.slice(0, 80) }),
+  merged: (t) => toast(`${t.id.slice(-4)} merged into main`, { description: t.goal.slice(0, 80) }),
   needs_review: (t) => toast.warning(`${t.id.slice(-4)} waits at the gate`, { description: t.error?.slice(0, 100) ?? "held for review", action: { label: "Open", onClick: () => navigate(`/task/${t.id}`) } }),
   failed: (t) => toast.error(`${t.id.slice(-4)} failed`, { description: t.error?.slice(0, 100) }),
   blocked: (t) => toast.error(`${t.id.slice(-4)} is blocked`, { description: t.error?.slice(0, 100) }),
