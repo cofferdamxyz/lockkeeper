@@ -29,12 +29,21 @@ cd worker
 pnpm exec wrangler d1 create lockkeeper            # paste the id into wrangler.jsonc
 pnpm exec wrangler queues create lockkeeper-events
 pnpm exec wrangler vectorize create lockkeeper-index --dimensions=1024 --metric=cosine
+pnpm exec wrangler vectorize create-metadata-index lockkeeper-index --property-name=project --type=string
+pnpm exec wrangler vectorize create-metadata-index lockkeeper-index --property-name=kind --type=string
+pnpm exec wrangler vectorize create-metadata-index lockkeeper-index --property-name=status --type=string
 pnpm exec wrangler d1 migrations apply lockkeeper --remote
 cd .. && pnpm deploy                                # builds the dashboard, deploys the Worker
 cd worker
 pnpm exec wrangler secret put DASHBOARD_TOKEN       # any long random string
-pnpm exec wrangler secret put AI_GATEWAY_TOKEN      # the authenticated-gateway token
+pnpm exec wrangler secret put AI_GATEWAY_TOKEN      # a Cloudflare API token with only "AI Gateway Run"
+# after the project is registered (below), subscribe the queue to its pushes:
+pnpm exec wrangler queues subscription create lockkeeper-events --source artifacts.repo --events pushed \
+  --source-namespace lockkeeper --source-repo-name sample-api --name sample-api-pushes
 ```
+
+The gateway needs authenticated mode on and the Anthropic key stored under
+its provider keys; the sandboxes never see that key.
 
 Then, with `T` set to the dashboard token and `URL` to the Worker:
 
@@ -48,6 +57,10 @@ curl -X POST -H "Authorization: Bearer $T" $URL/api/projects/sample-api/index  #
 curl -X POST -H "Authorization: Bearer $T" -H 'content-type: application/json' \
   -d '{"goals":["add input validation with tests","add a rate-limiting middleware"]}' $URL/api/tasks
 ```
+
+A human can also work a task: `POST /api/tasks/manual` returns a fork and a
+one-hour write token; push, then `POST /api/tasks/:id/submit` and the change
+enters the merge round like an agent's.
 
 Open the Worker URL for the dashboard; `GET /api/state` is what it renders.
 
