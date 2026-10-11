@@ -247,8 +247,15 @@ function LockPanel({ lock, selected, onSelect, onReorder }: { lock: LockCandidat
     onReorder(next);
   };
   const anyPinned = lock.some((c) => c.pinned);
+  if (lock.length === 0) {
+    return (
+      <div className="glass rounded-full px-3 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+        <Lock className="size-3.5 text-blue-500" /> Lock · empty
+      </div>
+    );
+  }
   return (
-    <div className="glass rounded-xl p-2 w-[360px] max-w-[calc(100vw-24px)]">
+    <div className="glass rounded-xl p-2 w-[340px] max-w-[calc(100vw-24px)] max-h-[40vh] overflow-auto">
       <div className="flex items-center px-2 pt-1 pb-1.5">
         <Lock className="size-3.5 text-blue-500 mr-1.5" />
         <span className="eyebrow">Lock · {lock.length ? `${lock.length} waiting` : "empty"}</span>
@@ -258,7 +265,6 @@ function LockPanel({ lock, selected, onSelect, onReorder }: { lock: LockCandidat
           </Button>
         )}
       </div>
-      {lock.length === 0 && <p className="px-2 pb-1 text-xs text-muted-foreground">Nothing is waiting to enter main.</p>}
       {lock.map((c, i) => (
         <div key={c.task.id} className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent/60 ${selected === c.task.id ? "bg-accent" : ""}`}>
           <button type="button" onClick={() => onSelect(c.task.id)} className="flex-1 min-w-0 text-left">
@@ -394,7 +400,7 @@ export function MapView({
             </div>
           )}
         </div>
-        <div className="absolute top-3 right-3">{city && <LockPanel lock={city.lock} selected={selected} onSelect={onSelect} onReorder={onReorder} />}</div>
+        <div className="absolute right-3 bottom-16 flex flex-col items-end">{city && <LockPanel lock={city.lock} selected={selected} onSelect={onSelect} onReorder={onReorder} />}</div>
         <div className="absolute left-3 bottom-16 flex flex-col items-start gap-2">
           {legend && (
             <div className="glass rounded-xl p-3 max-w-[560px] text-[11px] leading-relaxed">
