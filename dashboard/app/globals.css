@@ -135,3 +135,7 @@ body { font-family: var(--font-sans); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 500; }
 .glass { background: color-mix(in oklab, var(--background) 82%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--border); }
+.scene-label { background: color-mix(in oklab, var(--background) 85%, transparent); border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; font-size: 12px; white-space: nowrap; color: var(--foreground); transform: translate(8px, -50%); display: inline-flex; align-items: center; gap: 6px; }
+.scene-label .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.scene-label.gate { color: var(--muted-foreground); transform: translate(-50%, 0); }
+.scene-dir { font-size: 11px; letter-spacing: 0.16em; font-weight: 600; opacity: 0.75; white-space: nowrap; }

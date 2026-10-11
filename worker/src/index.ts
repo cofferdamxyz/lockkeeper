@@ -6,11 +6,12 @@ import config from "../../lockkeeper.config";
 import { deleteRepo } from "./artifacts";
 import { getProject, getSetting, getTask, listTasks, setSetting, updateTask, upsertProject } from "./db";
 import type { LockkeeperEnv } from "./env";
+import { commitDetail, fileDetail } from "./history";
 import { handleQueue } from "./queue";
 import { indexProject } from "./repomap";
 import { SNAPSHOT_SETTING } from "./sandbox";
 import { getState } from "./state";
-import { createManualTask, createTasks, indexCommits, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
+import { createManualTask, createTasks, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
 
 export { AgentSandbox } from "./sandbox";
 export { MergeWorkflow } from "./workflow";
@@ -82,6 +83,24 @@ app.post("/api/projects/:id/index", async (c) => {
 });
 
 app.get("/api/projects/:id/state", async (c) => c.json(await getState(c.env, c.req.param("id"))));
+
+/** One commit: message, author, date, parents, the files it changed, the task that produced it. */
+app.get("/api/projects/:id/commits/:sha", async (c) => {
+  const pc = projectConfig(c.req.param("id"));
+  const sha = c.req.param("sha");
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return c.json({ error: "bad sha" }, 400);
+  const d = await commitDetail(c.env, pc.id, sha);
+  return d ? c.json(d) : c.json({ error: "not found" }, 404);
+});
+
+/** One file on the default branch, with the commits that touched it. */
+app.get("/api/projects/:id/file", async (c) => {
+  const pc = projectConfig(c.req.param("id"));
+  const path = c.req.query("path") ?? "";
+  if (!path || path.includes("..")) return c.json({ error: "path is required" }, 400);
+  const d = await fileDetail(c.env, pc.id, path);
+  return d ? c.json(d) : c.json({ error: "not found" }, 404);
+});
 app.get("/api/state", async (c) => c.json(await getState(c.env, c.req.query("project") ?? config.projects[0].id)));
 
 app.post("/api/tasks", async (c) => {
@@ -237,14 +256,8 @@ app.post("/api/admin/reindex-commits/:project", async (c) => {
   )
     .bind(pc.id)
     .all<{ task_id: string; main_before: string | null; main_after: string }>();
-  let done = 0;
-  for (const r of rows.results) {
-    const task = await getTask(c.env.DB, r.task_id);
-    if (!task) continue;
-    await indexCommits(c.env, task, r.main_before, r.main_after);
-    done++;
-  }
-  return c.json({ project: pc.id, merges: done });
+  const result = await indexProject(c.env, pc.id);
+  return c.json({ project: pc.id, merges: rows.results.length, ...result });
 });
 
 /** Operator reset for a task stuck by an infrastructure failure. */

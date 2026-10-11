@@ -31,10 +31,31 @@ export interface PositionView {
   x: number;
   y: number;
   z: number;
-  meta: { dir?: string; bytes?: number; task?: string; status?: string; sha?: string; merge?: boolean; author?: string | null; files?: string[] } | null;
+  meta: { dir?: string; bytes?: number; task?: string | null; status?: string; sha?: string; merge?: boolean; author?: string | null; files?: string[]; at?: string; message?: string } | null;
 }
 
 export interface EdgeView { a: string; b: string; cosine: number; paths: number }
+
+export interface CommitDetail {
+  sha: string;
+  message: string;
+  body: string;
+  author: string | null;
+  at: string;
+  parents: string[];
+  files: string[];
+  task: string | null;
+  merge: boolean;
+  position: { x: number; y: number; z: number } | null;
+}
+
+export interface FileDetail {
+  path: string;
+  text: string | null;
+  bytes: number;
+  truncated: boolean;
+  commits: { sha: string; message: string; at: string; task: string | null }[];
+}
 
 export interface DecisionView {
   id: string;
@@ -196,7 +217,11 @@ export function replayState(state: StateView, history: HistoryItem[], at: number
   return {
     ...state,
     tasks,
-    positions: state.positions.filter((p) => p.kind !== "commit" || (p.meta?.task && commitsAt.has(p.meta.task))),
+    positions: state.positions.filter((p) => {
+      if (p.kind !== "commit") return true;
+      if (p.meta?.at) return new Date(p.meta.at).getTime() <= at;
+      return p.meta?.task ? commitsAt.has(p.meta.task) : true;
+    }),
     edges: state.edges.filter((e) => live.has(e.a) && live.has(e.b)),
     merges: state.merges.filter((m) => new Date(m.at).getTime() <= at),
     decisions: state.decisions.filter((d) => new Date(d.at).getTime() <= at),

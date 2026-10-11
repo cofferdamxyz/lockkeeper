@@ -1,18 +1,19 @@
 import { headSha, listFiles } from "./artifacts";
 import { getProject } from "./db";
 import type { LockkeeperEnv } from "./env";
+import { indexCommitHistory } from "./history";
 import { type Basis, embed, fileVectorId, fitBasis, project as projectVector, upsertVectors } from "./vectors";
 
 /**
  * The repository map: every file of the project's default branch embedded, placed on a fixed
  * three-axis basis and stored both in the index (for similarity) and in D1 (for the dashboard).
  */
-export async function indexProject(env: LockkeeperEnv, projectId: string, opts: { refit?: boolean } = {}): Promise<{ files: number; head: string | null; refit: boolean }> {
+export async function indexProject(env: LockkeeperEnv, projectId: string, opts: { refit?: boolean } = {}): Promise<{ files: number; head: string | null; refit: boolean; commits?: unknown }> {
   const project = await getProject(env.DB, projectId);
   if (!project) throw new Error(`unknown project ${projectId}`);
   const head = await headSha(env, project.repo, project.default_branch);
   const files = await listFiles(env, project.repo, project.default_branch);
-  if (files.length === 0) return { files: 0, head, refit: false };
+  if (files.length === 0) return { files: 0, head, refit: false, commits: { indexed: 0, total: 0 } };
   const vectors = await embed(
     env,
     files.map((f) => `${f.path}\n${f.text.slice(0, 6000)}`),
@@ -51,7 +52,14 @@ export async function indexProject(env: LockkeeperEnv, projectId: string, opts: 
     })),
   );
   await env.DB.prepare("UPDATE projects SET head_sha = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").bind(head, projectId).run();
-  return { files: files.length, head, refit };
+  let commits: { indexed: number; total: number } | { error: string } = { indexed: 0, total: 0 };
+  try {
+    commits = await indexCommitHistory(env, projectId, basis);
+  } catch (e) {
+    commits = { error: String(e).slice(0, 300) };
+    console.warn("commit history indexing failed", String(e));
+  }
+  return { files: files.length, head, refit, commits };
 }
 
 /** Place one vector (a task revision) on the project's basis. No-op until the map exists. */

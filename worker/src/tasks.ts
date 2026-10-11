@@ -264,11 +264,7 @@ export async function indexCommits(env: LockkeeperEnv, task: TaskRow, mainBefore
 
 export async function markMerged(env: LockkeeperEnv, task: TaskRow, mainAfter: string, mainBefore: string | null = null): Promise<void> {
   await updateTask(env.DB, task.id, { status: "merged" });
-  try {
-    await indexCommits(env, task, mainBefore, mainAfter);
-  } catch (e) {
-    console.warn("commit indexing failed", task.id, String(e));
-  }
+  void mainBefore; // commits are placed by indexProject, which follows every merge
   await indexTask(env, task.project, {
     id: task.id,
     goal: task.goal,
