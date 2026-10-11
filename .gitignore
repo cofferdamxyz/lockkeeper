@@ -11,3 +11,8 @@ dashboard/.next/
 dashboard/out/
 worker/worker-configuration.d.ts
 worker/wrangler.novectorize.jsonc
+
+# Recordings stay out of the repository
+*.mov
+*.mp4
+*.webm
