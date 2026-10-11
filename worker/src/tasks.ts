@@ -92,6 +92,47 @@ export async function startTask(env: LockkeeperEnv, task: TaskRow, brief: string
   await indexTask(env, task.project, { id: task.id, goal: task.goal, status: "running" });
 }
 
+/** A task whose change a human pushes to the fork. Returns a one-hour write token for that person. */
+export async function createManualTask(env: LockkeeperEnv, projectId: string, goal: string): Promise<{ task: TaskRow; remote: string; token: string; expiresAt: string }> {
+  const project = await getProject(env.DB, projectId);
+  if (!project) throw new Error(`project ${projectId} is not registered`);
+  const id = newId("t");
+  const fork = await forkForTask(env, project.repo, id);
+  await env.DB.prepare(
+    `INSERT INTO tasks (id, project, goal, brief, fork, fork_remote, status, base_sha, summary) VALUES (?, ?, ?, '', ?, ?, 'running', ?, 'manual task: a human is pushing the change')`,
+  )
+    .bind(id, projectId, goal, fork.name, fork.remote, project.head_sha)
+    .run();
+  await indexTask(env, projectId, { id, goal, status: "running" });
+  const repo = await env.ARTIFACTS.get(fork.name);
+  const token = await repo.createToken("write", 3600);
+  return { task: (await getTask(env.DB, id))!, remote: fork.remote, token: token.plaintext, expiresAt: token.expiresAt };
+}
+
+/** The human is done pushing: harvest the fork in a sandbox and let the change enter the merge round. */
+export async function submitManualTask(env: LockkeeperEnv, task: TaskRow): Promise<void> {
+  const pc = projectConfig(task.project);
+  if (!task.fork || !task.fork_remote) throw new Error("task has no fork");
+  const sandbox = `agent-${task.id}`;
+  await grantRepoToken(env, sandbox, task.fork, "write", 1800);
+  const base = task.base_sha ?? (await headSha(env, (await getProject(env.DB, task.project))!.repo, "main"));
+  await env.SANDBOX.getByName(sandbox).harvest({
+    taskId: task.id,
+    project: task.project,
+    forkRepo: task.fork,
+    forkRemote: task.fork_remote,
+    goal: task.goal,
+    brief: "",
+    conventionsPath: pc.conventions,
+    testCommand: pc.test,
+    model: config.agents.model,
+    maxMinutes: config.agents.maxMinutes,
+    gateway: { accountId: env.AI_GATEWAY_ACCOUNT_ID, gatewayId: env.AI_GATEWAY_ID },
+    baseSha: base ?? "",
+    summary: "manual task: change pushed by a human",
+  });
+}
+
 export interface FinishReport {
   taskId: string;
   ok: boolean;

@@ -8,7 +8,7 @@ import { handleQueue } from "./queue";
 import { indexProject } from "./repomap";
 import { SNAPSHOT_SETTING } from "./sandbox";
 import { getState } from "./state";
-import { createTasks, projectConfig, restartTask, triggerMerge } from "./tasks";
+import { createManualTask, createTasks, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
 
 export { AgentSandbox } from "./sandbox";
 export { MergeWorkflow } from "./workflow";
@@ -98,6 +98,27 @@ app.post("/api/tasks", async (c) => {
   if ((await getSetting(c.env.DB, SNAPSHOT_SETTING)) === null) return c.json({ error: "no agent snapshot yet; POST /api/admin/bootstrap first" }, 409);
   const tasks = await createTasks(c.env, c.executionCtx, projectId, clean);
   return c.json({ tasks: tasks.map((t) => ({ id: t.id, goal: t.goal, status: t.status })) }, 202);
+});
+
+/** A task a human works on: returns the fork remote and a one-hour write token. */
+app.post("/api/tasks/manual", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { project?: string; goal?: string };
+  if (!body.goal?.trim()) return c.json({ error: "goal is required" }, 400);
+  const result = await createManualTask(c.env, body.project ?? config.projects[0].id, body.goal.trim());
+  return c.json({ id: result.task.id, remote: result.remote, token: result.token, expiresAt: result.expiresAt }, 201);
+});
+
+/** The human has pushed; harvest the fork and enter the merge round. */
+app.post("/api/tasks/:id/submit", async (c) => {
+  const task = await getTask(c.env.DB, c.req.param("id"));
+  if (!task) return c.json({ error: "not found" }, 404);
+  if (task.status !== "running") return c.json({ error: `task is ${task.status}` }, 409);
+  c.executionCtx.waitUntil(
+    submitManualTask(c.env, task).catch(async (e) => {
+      await updateTask(c.env.DB, task.id, { status: "failed", error: `submit failed: ${String(e).slice(0, 1000)}` });
+    }),
+  );
+  return c.json({ id: task.id, status: "harvesting" }, 202);
 });
 
 app.get("/api/tasks/:id", async (c) => {

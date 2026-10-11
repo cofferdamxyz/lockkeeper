@@ -423,17 +423,37 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
 
   // ---------------------------------------------------------------- internals
 
+  /**
+   * A human pushed commits to the task's fork; harvest them the way an agent's run is harvested
+   * (tests, diff, files, commits) so the change enters the merge round like any other.
+   */
+  async harvest(params: RunTaskParams & { baseSha: string; summary: string }): Promise<void> {
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const sandbox = `agent-${params.taskId}`;
+      await this.#ensureStarted(sandbox);
+      await this.#run(["sh", "-c", `rm -rf ${REPO_DIR} ${TASK_DIR} && mkdir -p ${TASK_DIR}`], WORKSPACE, {});
+      const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
+      if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
+      const stored: StoredTask = { ...params, kind: "agent", sandbox, baseSha: params.baseSha, startedAt: Date.now() };
+      await this.#harvest(stored, { isError: false, result: params.summary, costUsd: 0 }, "");
+    });
+  }
+
   async #conclude(task: StoredTask, how: { state: "lost" } | { state: "timeout" } | { state: "exited"; exitCode: number }): Promise<void> {
     await this.ctx.storage.deleteAlarm();
     this.ctx.storage.kv.delete("task");
     if (task.kind !== "agent") return;
+    if (how.state === "lost") {
+      await finishTask(this.env, { taskId: task.taskId, ok: false, error: "sandbox stopped before the agent finished" });
+      return;
+    }
+    const outcome = how.state === "timeout" ? { isError: true, error: `agent exceeded ${task.maxMinutes} minutes`, result: undefined, costUsd: undefined } : await this.#claudeOutcome(how.exitCode);
+    const tail = await this.readTail(80);
+    await this.#harvest(task, outcome, tail);
+  }
+
+  async #harvest(task: StoredTask, outcome: { isError: boolean; error?: string; result?: string; costUsd?: number }, tail: string): Promise<void> {
     try {
-      if (how.state === "lost") {
-        await finishTask(this.env, { taskId: task.taskId, ok: false, error: "sandbox stopped before the agent finished" });
-        return;
-      }
-      const outcome = how.state === "timeout" ? { isError: true, error: `agent exceeded ${task.maxMinutes} minutes`, result: undefined, costUsd: undefined } : await this.#claudeOutcome(how.exitCode);
-      const tail = await this.readTail(80);
       // Harvest whatever the agent left, even after a failure, so the ledger shows the work.
       await this.#run(["sh", "-c", `git ${GIT_IDENTITY.join(" ")} add -A && git ${GIT_IDENTITY.join(" ")} commit -q -m "Lockkeeper: uncommitted changes left by the agent" || true`], REPO_DIR, {});
       const ahead = Number.parseInt((await this.#run(["git", "rev-list", "--count", `${task.baseSha}..HEAD`], REPO_DIR, {})).stdout.trim() || "0", 10);
