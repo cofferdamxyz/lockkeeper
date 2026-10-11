@@ -180,7 +180,7 @@ function MainRing({ busy, head }: { busy: boolean; head: string | null }) {
         <torusGeometry args={[MAIN_RADIUS, 0.035, 16, 128]} />
         <meshPhongMaterial color={BLUE} emissive={BLUE} emissiveIntensity={busy ? 1.1 : 0.45} />
       </mesh>
-      <Html distanceFactor={14} position={[0, 0.02, 0]} center style={{ pointerEvents: "none" }}>
+      <Html distanceFactor={9} position={[0, 0.02, 0]} center style={{ pointerEvents: "none" }}>
         <div className="scene-label gate" style={{ transform: "none" }}>
           main <span className="mono">{head ? head.slice(0, 7) : "—"}</span>
         </div>
@@ -276,9 +276,11 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
             <Spoke from={b.base} to={pts[0]} color={color} opacity={dim ? 0.15 : 0.5} />
             {b.mergeOnMain && <Spoke from={pts[pts.length - 1]} to={b.mergeOnMain} color={color} opacity={dim ? 0.15 : 0.7} />}
             {t.status === "needs_review" && <Spoke from={pts[pts.length - 1]} to={layout.ringPoint(MAIN_RADIUS, layout.tEnd)} color="#f5b94a" opacity={0.6} dashed />}
-            {!compact && t.status === "merged" && !dim && (
-              <Html position={pts[Math.floor(pts.length / 2)]} distanceFactor={16} center style={{ pointerEvents: "none" }}>
-                <div className="scene-dir" style={{ color: "#5a86c7", opacity: 0.6 }}>{t.id.slice(-4)}</div>
+            {!compact && isLit && t.status === "merged" && (
+              <Html position={pts[Math.floor(pts.length / 2)]} distanceFactor={10} center style={{ pointerEvents: "none" }}>
+                <div className="scene-label">
+                  <span className="mono">{t.id.slice(-4)}</span> {t.goal.slice(0, 40)}
+                </div>
               </Html>
             )}
           </group>
@@ -342,7 +344,7 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         })}
       {!compact &&
         dirCentroids.map((d) => (
-          <Html key={d.dir} position={[d.pos[0], d.pos[1] + 0.25, d.pos[2]]} distanceFactor={16} center style={{ pointerEvents: "none" }}>
+          <Html key={d.dir} position={[d.pos[0], d.pos[1] + 0.25, d.pos[2]]} distanceFactor={9} center style={{ pointerEvents: "none" }}>
             <div className="scene-dir" style={{ color: fileColor }}>{d.dir === "." ? "ROOT" : d.dir.toUpperCase()}</div>
           </Html>
         ))}
