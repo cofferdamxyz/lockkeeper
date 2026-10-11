@@ -58,12 +58,20 @@ export interface RunTaskParams {
   gateway: { accountId: string; gatewayId: string };
 }
 
+type AgentOutcome = { isError: boolean; error?: string; result?: string; costUsd?: number };
+
 interface StoredTask extends RunTaskParams {
   kind: "agent" | "resolve" | "bootstrap";
+  /** Agent tasks run in two phases: the agent itself, then the harness's test run. */
+  phase: "agent" | "tests";
   sandbox: string;
   baseSha: string;
   startedAt: number;
+  outcome?: AgentOutcome;
+  tail?: string;
 }
+
+const TESTS_MAX_MINUTES = 12;
 
 export interface CommandResult {
   exitCode: number;
@@ -142,6 +150,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     await this.#writeFile(PID_PATH, String(proc.pid));
     const stored: StoredTask = {
       kind: "bootstrap",
+      phase: "agent",
       sandbox: "bootstrap",
       baseSha: "",
       startedAt: Date.now(),
@@ -191,28 +200,27 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
 
   /** Clone the fork, write the prompt, start Claude Code in the background. */
   async runTask(params: RunTaskParams): Promise<{ baseSha: string }> {
-    return this.ctx.blockConcurrencyWhile(async () => {
-      const sandbox = `agent-${params.taskId}`;
-      await this.#ensureStarted(sandbox);
-      await this.#run(["sh", "-c", `rm -rf ${REPO_DIR} ${TASK_DIR} && mkdir -p ${TASK_DIR}`], WORKSPACE, {});
-      const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
-      if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
-      const baseSha = (await this.#run(["git", "rev-parse", "HEAD"], REPO_DIR, {})).stdout.trim();
-      const conventions = await this.#readOptional(`${REPO_DIR}/${params.conventionsPath}`);
-      const prompt = agentPrompt({
-        taskId: params.taskId,
-        goal: params.goal,
-        conventions,
-        brief: params.brief,
-        testCommand: params.testCommand,
-      });
-      await this.#writeFile(PROMPT_PATH, prompt);
-      await this.#startClaude(prompt, params.model, params.gateway, REPO_DIR);
-      const stored: StoredTask = { ...params, kind: "agent", sandbox, baseSha, startedAt: Date.now() };
-      this.ctx.storage.kv.put("task", JSON.stringify(stored));
-      await this.ctx.storage.setAlarm(Date.now() + CHECK_INTERVAL_MS);
-      return { baseSha };
+    if (this.ctx.storage.kv.get("task") !== undefined) throw new Error("this sandbox is busy");
+    const sandbox = `agent-${params.taskId}`;
+    await this.#ensureStarted(sandbox);
+    await this.#run(["sh", "-c", `rm -rf ${REPO_DIR} ${TASK_DIR} && mkdir -p ${TASK_DIR}`], WORKSPACE, {});
+    const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
+    if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
+    const baseSha = (await this.#run(["git", "rev-parse", "HEAD"], REPO_DIR, {})).stdout.trim();
+    const conventions = await this.#readOptional(`${REPO_DIR}/${params.conventionsPath}`);
+    const prompt = agentPrompt({
+      taskId: params.taskId,
+      goal: params.goal,
+      conventions,
+      brief: params.brief,
+      testCommand: params.testCommand,
     });
+    await this.#writeFile(PROMPT_PATH, prompt);
+    await this.#startClaude(prompt, params.model, params.gateway, REPO_DIR);
+    const stored: StoredTask = { ...params, kind: "agent", phase: "agent", sandbox, baseSha, startedAt: Date.now() };
+    this.ctx.storage.kv.put("task", JSON.stringify(stored));
+    await this.ctx.storage.setAlarm(Date.now() + CHECK_INTERVAL_MS);
+    return { baseSha };
   }
 
   /** Called by the alarm while a task runs; finishes it when the agent exits. */
@@ -230,12 +238,14 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     const exit = await this.#readOptional(EXIT_CODE_PATH);
     if (exit === null) {
       const elapsedMin = (Date.now() - task.startedAt) / 60_000;
-      if (elapsedMin > task.maxMinutes) {
+      const limit = task.kind === "agent" && task.phase === "tests" ? TESTS_MAX_MINUTES : task.maxMinutes;
+      if (elapsedMin > limit) {
         const pid = (await this.#readOptional(PID_PATH))?.trim();
         if (pid) await this.#run(["sh", "-c", `kill -TERM ${pid} 2>/dev/null; sleep 2; kill -KILL ${pid} 2>/dev/null; true`], "/", {});
         this.ctx.storage.kv.delete("task");
         if (task.kind === "bootstrap") await this.#concludeBootstrap(task, null);
-        else await this.#conclude(task, { state: "timeout" });
+        else if (task.phase === "tests") await this.#afterTests(task, null);
+        else await this.#afterAgent(task, { state: "timeout" });
         return;
       }
       await this.ctx.storage.setAlarm(Date.now() + CHECK_INTERVAL_MS);
@@ -246,7 +256,11 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
       await this.#concludeBootstrap(task, Number.parseInt(exit, 10));
       return;
     }
-    await this.#conclude(task, { state: "exited", exitCode: Number.parseInt(exit, 10) });
+    if (task.phase === "tests") {
+      await this.#afterTests(task, Number.parseInt(exit, 10));
+      return;
+    }
+    await this.#afterAgent(task, { state: "exited", exitCode: Number.parseInt(exit, 10) });
   }
 
   async readTail(lines = 60): Promise<string> {
@@ -338,6 +352,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     await this.#startClaude(prompt, p.model, p.gateway, PROJECT_DIR);
     const stored: StoredTask = {
       kind: "resolve",
+      phase: "agent",
       sandbox: `merge-${p.project}`,
       baseSha: "",
       startedAt: Date.now(),
@@ -428,44 +443,76 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
    * (tests, diff, files, commits) so the change enters the merge round like any other.
    */
   async harvest(params: RunTaskParams & { baseSha: string; summary: string }): Promise<void> {
-    await this.ctx.blockConcurrencyWhile(async () => {
-      const sandbox = `agent-${params.taskId}`;
-      await this.#ensureStarted(sandbox);
-      await this.#run(["sh", "-c", `rm -rf ${REPO_DIR} ${TASK_DIR} && mkdir -p ${TASK_DIR}`], WORKSPACE, {});
-      const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
-      if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
-      const stored: StoredTask = { ...params, kind: "agent", sandbox, baseSha: params.baseSha, startedAt: Date.now() };
-      await this.#harvest(stored, { isError: false, result: params.summary, costUsd: 0 }, "");
-    });
+    if (this.ctx.storage.kv.get("task") !== undefined) throw new Error("this sandbox is busy");
+    const sandbox = `agent-${params.taskId}`;
+    await this.#ensureStarted(sandbox);
+    await this.#run(["sh", "-c", `rm -rf ${REPO_DIR} ${TASK_DIR} && mkdir -p ${TASK_DIR}`], WORKSPACE, {});
+    const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
+    if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
+    const stored: StoredTask = {
+      ...params,
+      kind: "agent",
+      phase: "tests",
+      sandbox,
+      baseSha: params.baseSha,
+      startedAt: Date.now(),
+      outcome: { isError: false, result: params.summary, costUsd: 0 },
+      tail: "",
+    };
+    await this.#startTests(stored);
   }
 
-  async #conclude(task: StoredTask, how: { state: "lost" } | { state: "timeout" } | { state: "exited"; exitCode: number }): Promise<void> {
-    await this.ctx.storage.deleteAlarm();
-    this.ctx.storage.kv.delete("task");
-    if (task.kind !== "agent") return;
+  /** Run the project's test command in the background; the alarm collects the result. */
+  async #startTests(task: StoredTask): Promise<void> {
+    await this.#run(["sh", "-c", `rm -f ${EXIT_CODE_PATH} ${PID_PATH}`], "/", {});
+    const proc = await this.#container.exec(["/bin/sh", "-c", TASK_SCRIPT.replace(EVENTS_PATH, `${TASK_DIR}/tests.log`), "tests", "sh", "-c", task.testCommand], {
+      cwd: REPO_DIR,
+      env: { ...TRUST_ENV },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await this.#writeFile(PID_PATH, String(proc.pid));
+    const stored: StoredTask = { ...task, phase: "tests", startedAt: Date.now() };
+    this.ctx.storage.kv.put("task", JSON.stringify(stored));
+    await this.ctx.storage.setAlarm(Date.now() + 15_000);
+  }
+
+  /** The agent exited (or timed out): record what it left and start the test phase. */
+  async #afterAgent(task: StoredTask, how: { state: "lost" } | { state: "timeout" } | { state: "exited"; exitCode: number }): Promise<void> {
     if (how.state === "lost") {
       await finishTask(this.env, { taskId: task.taskId, ok: false, error: "sandbox stopped before the agent finished" });
       return;
     }
-    const outcome = how.state === "timeout" ? { isError: true, error: `agent exceeded ${task.maxMinutes} minutes`, result: undefined, costUsd: undefined } : await this.#claudeOutcome(how.exitCode);
+    const outcome: AgentOutcome =
+      how.state === "timeout" ? { isError: true, error: `agent exceeded ${task.maxMinutes} minutes` } : await this.#claudeOutcome(how.exitCode);
     const tail = await this.readTail(80);
-    await this.#harvest(task, outcome, tail);
-  }
-
-  async #harvest(task: StoredTask, outcome: { isError: boolean; error?: string; result?: string; costUsd?: number }, tail: string): Promise<void> {
     try {
       // Harvest whatever the agent left, even after a failure, so the ledger shows the work.
       await this.#run(["sh", "-c", `git ${GIT_IDENTITY.join(" ")} add -A && git ${GIT_IDENTITY.join(" ")} commit -q -m "Lockkeeper: uncommitted changes left by the agent" || true`], REPO_DIR, {});
       const ahead = Number.parseInt((await this.#run(["git", "rev-list", "--count", `${task.baseSha}..HEAD`], REPO_DIR, {})).stdout.trim() || "0", 10);
       if (outcome.isError) {
         await finishTask(this.env, { taskId: task.taskId, ok: false, error: outcome.error ?? "agent failed", eventsTail: tail, costUsd: outcome.costUsd });
+        await this.#container.destroy();
         return;
       }
       if (ahead === 0) {
         await finishTask(this.env, { taskId: task.taskId, ok: false, error: "the agent made no changes", eventsTail: tail, costUsd: outcome.costUsd, summary: outcome.result });
+        await this.#container.destroy();
         return;
       }
-      const tests = await this.#run(["sh", "-c", task.testCommand], REPO_DIR, TRUST_ENV);
+      await this.#startTests({ ...task, outcome, tail });
+    } catch (e) {
+      await finishTask(this.env, { taskId: task.taskId, ok: false, error: `harvest failed: ${String(e).slice(0, 1500)}`, eventsTail: tail });
+      if (this.#container.running) await this.#container.destroy();
+    }
+  }
+
+  /** Tests finished (or timed out): push the fork, gather the diff, report, and stop the container. */
+  async #afterTests(task: StoredTask, exitCode: number | null): Promise<void> {
+    const outcome = task.outcome ?? { isError: false, result: "" };
+    const tail = task.tail ?? "";
+    try {
+      const testOutput = ((await this.#readOptional(`${TASK_DIR}/tests.log`)) ?? "") + ((await this.#readOptional(STDERR_PATH)) ?? "");
       const push = await this.#run(["git", "push", "origin", "HEAD:main"], REPO_DIR, TRUST_ENV);
       if (push.exitCode !== 0) {
         await finishTask(this.env, { taskId: task.taskId, ok: false, error: `push failed: ${push.stderr.slice(-1500)}`, eventsTail: tail, costUsd: outcome.costUsd });
@@ -485,12 +532,14 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
         diffstat,
         diff,
         commits,
-        testsOk: tests.exitCode === 0,
-        testOutput: (tests.stdout + tests.stderr).slice(-3000),
+        testsOk: exitCode === 0,
+        testOutput: (exitCode === null ? `tests exceeded ${TESTS_MAX_MINUTES} minutes\n` : "") + testOutput.slice(-3000),
         summary: outcome.result,
         costUsd: outcome.costUsd,
         eventsTail: tail,
       });
+    } catch (e) {
+      await finishTask(this.env, { taskId: task.taskId, ok: false, error: `harvest failed: ${String(e).slice(0, 1500)}`, eventsTail: tail });
     } finally {
       if (this.#container.running) await this.#container.destroy();
     }
