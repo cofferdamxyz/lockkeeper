@@ -7,3 +7,9 @@ allowBuilds:
   esbuild: true
   workerd: true
   sharp: true
+
+# Patched versions of transitive development dependencies (Dependabot, 2026-10-11).
+# braces has no patched release yet; it reaches us only through the shadcn CLI.
+overrides:
+  undici: ">=7.29.1"
+  sharp: ">=0.35.5"
