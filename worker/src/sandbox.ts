@@ -213,6 +213,8 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     const clone = await this.#run(["git", "clone", "--branch", "main", "--", params.forkRemote, REPO_DIR], WORKSPACE, TRUST_ENV);
     if (clone.exitCode !== 0) throw new Error(`clone failed: ${clone.stderr.slice(-2000)}`);
     const baseSha = (await this.#run(["git", "rev-parse", "HEAD"], REPO_DIR, {})).stdout.trim();
+    // The agent commits under its own identity; without one it burns turns configuring git.
+    await this.#run(["sh", "-c", 'git config user.name "Lockkeeper agent" && git config user.email agent@lockkeeper.invalid'], REPO_DIR, {});
     const conventions = await this.#readOptional(`${REPO_DIR}/${params.conventionsPath}`);
     const prompt = agentPrompt({
       taskId: params.taskId,

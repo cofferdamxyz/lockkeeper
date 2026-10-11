@@ -97,4 +97,4 @@ pnpm --filter dashboard build
 node dashboard/dev-proxy.mjs --upstream https://<worker>.workers.dev --token-file ./secrets.env --port 8788
 ```
 
-Status: under construction (October 2026).
+Status: the loop runs end to end (October 2026); the GitHub mirror, Workers Builds on the project repository and the demo recording are still to come.

@@ -576,9 +576,11 @@ export function buildCity(state: StateView, opts: BuildOptions): City {
   // ticks up the column
   const ticks: CityTick[] = [{ y: H, label: "now" }];
   const step = windowMs <= 180 * MINUTE ? 15 * MINUTE : windowMs <= 720 * MINUTE ? 60 * MINUTE : 6 * 60 * MINUTE;
+  // Every tick is drawn; only every second one is labelled, so the column stays readable.
+  const labelEvery = step * 2;
   for (let m = step; m < windowMs; m += step) {
     const y = yAt(now - m);
-    const label = m % (60 * MINUTE) === 0 ? `−${m / (60 * MINUTE)}h` : `−${m / MINUTE}m`;
+    const label = m % labelEvery !== 0 ? "" : m % (60 * MINUTE) === 0 ? `−${m / (60 * MINUTE)}h` : `−${m / MINUTE}m`;
     ticks.push({ y, label });
   }
 

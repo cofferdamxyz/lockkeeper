@@ -133,8 +133,12 @@ Projects, thresholds and the agent model live in `lockkeeper.config.ts`.
    touch files outside the goal; run the tests before finishing). The
    stream's final `result` event gives the summary, cost and `is_error`,
    all recorded in D1.
-4. **Ready.** The harness commits anything uncommitted under the agent's
-   own message, runs the test suite, pushes to the fork's `main`, captures
+4. **Ready.** While the agent works, the harness's thirty-second check
+   pushes each new commit to the fork, so the map shows the branch
+   growing and the ledger keeps the agent's commits even if the run later
+   fails. When the agent exits, the harness commits anything uncommitted
+   under the agent's own message, runs the test suite, pushes to the
+   fork's `main`, captures
    `git diff --stat` and the diff (size-capped) against the base commit,
    and marks the task `ready` (or `failed` with the reason: no changes,
    tests red, agent error). The sandbox is destroyed.
@@ -155,9 +159,12 @@ Projects, thresholds and the agent model live in `lockkeeper.config.ts`.
    a grace period. The dashboard shows the deployed URL.
 
 Statuses: `queued → running → ready → merging → merged`, with
-`needs_review` (a human approves, then `merging`), `blocked` (a resolution
-failed; one automatic restart from a fresh fork with a new brief),
-`failed`, `abandoned`.
+`needs_review` (a person approves, which sets `approved`, then `merging`;
+an approval survives a conflict the resolver fixes on the way in),
+`blocked` (a resolution failed; one automatic restart from a fresh fork
+with a new brief), `failed`, `abandoned`. A person may also hold any
+change in flight so it never merges unattended, and release it; a released
+change re-enters the lock and Clef decides again.
 
 ## 5. The index
 
@@ -409,6 +416,9 @@ resolver, the `needs_review` card and the approval; GitHub receiving
 
 ## 11. Build plan
 
+The plan as written on 2026-10-10; the change log at the end records
+what shipped and when.
+
 | Day | Morning | Afternoon | Checkpoint |
 |---|---|---|---|
 | Sat 10-11 | Scaffold: Worker (C3), bindings, D1 schema; project repo with `sample-api`; sandbox image (Claude Code, git, node); sandbox start → `claude -p` → harness commit, tests, push | Queue consumer; index upsert; repository map embedding and projection; brief; `/api/state` | One task runs end to end and shows in the state API |
@@ -520,6 +530,12 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11 (afternoon): hold and release on any change in flight
+  (`POST /api/tasks/:id/hold`); a released change re-enters the lock. The
+  sandbox gives the agent a git identity. A page that outlived a deploy
+  reloads itself once instead of freezing on missing chunks. The column
+  labels every other tick, staggers merge labels and drops narrow
+  sub-sector labels; the strata move every five seconds, not every tick.
 - 2026-10-11: a change a person approved keeps its approval when the
   resolver agent reconciles a conflict on the way in; it no longer waits
   for a second approval (the conflict row records `approved_by`).

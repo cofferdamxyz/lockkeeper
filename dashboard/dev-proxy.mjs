@@ -53,8 +53,18 @@ const server = createServer(async (req, res) => {
   }
   let file = join(root, decodeURIComponent(url.pathname));
   if (existsSync(file) && statSync(file).isDirectory()) file = join(file, "index.html");
-  if (!existsSync(file)) file = join(root, "index.html");
-  res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" });
+  if (!existsSync(file)) {
+    // A build renames its chunks; a stale page asking for an old one must see a 404, not the app shell.
+    if (url.pathname.startsWith("/_next/")) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    file = join(root, "index.html");
+  }
+  const type = types[extname(file)] ?? "application/octet-stream";
+  // The shell must never be cached, or a rebuild leaves the browser pointing at chunks that are gone.
+  res.writeHead(200, { "content-type": type, "cache-control": type.startsWith("text/html") ? "no-store" : "public, max-age=3600" });
   res.end(readFileSync(file));
 });
 

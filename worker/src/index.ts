@@ -8,6 +8,7 @@ import { getProject, getSetting, getTask, listTasks, setSetting, updateTask, ups
 import type { LockkeeperEnv } from "./env";
 import { commitDetail, deleteLiveCommits, fileDetail } from "./history";
 import { notify } from "./live";
+import { HOLDABLE } from "./lock";
 import { handleQueue } from "./queue";
 import { indexProject } from "./repomap";
 import { SNAPSHOT_SETTING } from "./sandbox";
@@ -238,6 +239,29 @@ app.post("/api/tasks/:id/approve", async (c) => {
   await notify(c.env, task.project, { type: "task", task: task.id, status: "approved" });
   await triggerMerge(c.env, task.project);
   return c.json({ id: task.id, status: "approved" });
+});
+
+/**
+ * Hold a change so it never merges unattended, or release it. Releasing a change that waits for
+ * review sends it back through the lock, where Clef decides again.
+ */
+app.post("/api/tasks/:id/hold", async (c) => {
+  const task = await getTask(c.env.DB, c.req.param("id"));
+  if (!task) return c.json({ error: "not found" }, 404);
+  if (!(HOLDABLE as readonly string[]).includes(task.status)) return c.json({ error: `task is ${task.status}` }, 409);
+  const body = (await c.req.json().catch(() => ({}))) as { hold?: boolean };
+  const hold = body.hold !== false;
+  if (hold) {
+    await updateTask(c.env.DB, task.id, { hold: 1 });
+    await notify(c.env, task.project, { type: "task", task: task.id, status: task.status });
+    return c.json({ id: task.id, hold: true, status: task.status });
+  }
+  // Only a change held by a person or by Clef's verdict goes straight back; red tests or a failed attempt still need a retry.
+  const release = task.status === "needs_review" && !task.error?.includes("tests failed") && !task.error?.includes("merge attempt failed");
+  await updateTask(c.env.DB, task.id, release ? { hold: 0, status: "ready", error: null } : { hold: 0 });
+  await notify(c.env, task.project, { type: "task", task: task.id, status: release ? "ready" : task.status });
+  if (release) await triggerMerge(c.env, task.project);
+  return c.json({ id: task.id, hold: false, status: release ? "ready" : task.status });
 });
 
 app.post("/api/tasks/:id/retry", async (c) => {

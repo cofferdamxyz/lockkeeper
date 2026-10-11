@@ -6,6 +6,7 @@ import { buildMergeRequest, type Candidate, type MergeDecision, parseMergeDecisi
 import { acquireLease, getProject, getTask, listTasks, newId, releaseLease, type TaskRow, updateTask } from "./db";
 import type { LockkeeperEnv } from "./env";
 import { notify } from "./live";
+import { pickNext } from "./lock";
 import { indexProject } from "./repomap";
 import { markMerged, projectConfig, restartTask, triggerMerge } from "./tasks";
 import { cosine, getVectors, jaccard, taskVectorId } from "./vectors";
@@ -139,9 +140,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
       console.error("clef failed", error);
     }
     decision = parseMergeDecision(raw, candidates.map((c) => c.id));
-    // A pinned order set from the dashboard wins over Clef's choice; Clef still scores the change.
-    const pinned = slice.filter((t) => t.lock_order !== null).sort((a, b) => (a.lock_order ?? 0) - (b.lock_order ?? 0))[0];
-    const nextId = pinned?.id ?? decision.next ?? slice[0].id;
+    const nextId = pickNext(slice, decision.next);
     await env.DB.prepare(
       "INSERT INTO decisions (id, project, candidates_json, request_json, response_json, chosen, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -222,7 +221,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
   if (!unattendedOk) {
     await stub.abortMerge();
     const why = chosen.hold === 1
-      ? `launched in review mode${decision ? ` (Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])})` : ""}`
+      ? `held by a person${decision ? ` (Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])})` : ""}`
       : decision
         ? `Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])}`
         : "no decision";

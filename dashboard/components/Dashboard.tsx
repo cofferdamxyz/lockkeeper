@@ -13,7 +13,7 @@ import { Home } from "@/components/views/Home";
 import { MapView, type WindowChoice } from "@/components/views/MapView";
 import { TaskView } from "@/components/views/TaskView";
 import { TasksView } from "@/components/views/TasksView";
-import { type ActivityEvent, api, connectLive, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setLockOrder, setToken, type StateView, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
+import { type ActivityEvent, api, connectLive, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setHold, setLockOrder, setToken, type StateView, type TaskAction, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
 import { pickWindow } from "@/lib/city";
 
 const ANNOUNCE: Partial<Record<TaskStatus, (t: TaskRow) => void>> = {
@@ -68,7 +68,14 @@ export default function Dashboard() {
   const dark = resolvedTheme !== "light";
   const taskId = route.startsWith("/task/") ? route.slice("/task/".length) : null;
 
-  useEffect(() => setHasToken(getToken() !== null), []);
+  useEffect(() => {
+    setHasToken(getToken() !== null);
+    try {
+      window.sessionStorage.removeItem("lk_chunk_reload");
+    } catch {
+      // storage unavailable
+    }
+  }, []);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
@@ -203,11 +210,16 @@ export default function Dashboard() {
       toast.error("Could not change the lock order", { description: String(e).slice(0, 160) });
     }
   }
-  async function act(task: TaskRow, action: "approve" | "retry" | "abandon") {
+  async function act(task: TaskRow, action: TaskAction) {
     setBusy(true);
     try {
-      await api(`/api/tasks/${task.id}/${action}`, { method: "POST" });
-      toast(`${task.id.slice(-4)}: ${action}`);
+      if (action === "hold" || action === "release") {
+        await setHold(task.id, action === "hold");
+        toast(action === "hold" ? `${task.id.slice(-4)} merges only with your approval now` : `${task.id.slice(-4)} is back in the lock`);
+      } else {
+        await api(`/api/tasks/${task.id}/${action}`, { method: "POST" });
+        toast(`${task.id.slice(-4)}: ${action}`);
+      }
       await refresh();
     } catch (e) {
       toast.error(`${action} failed`, { description: String(e).slice(0, 160) });
@@ -253,7 +265,7 @@ export default function Dashboard() {
         {route === "/" && <Home state={state} projectId={project} now={now} busy={busy} onLaunch={launch} onAddProject={() => setQuick("project")} onQuick={setQuick} />}
         {route === "/tasks" && <TasksView tasks={state?.tasks ?? []} now={now} />}
         {route === "/map" && (
-          <MapView state={state} shown={shown} history={history} activity={activity} selected={selected} hovered={hovered} onSelect={setSelected} onHover={setHovered} replayAt={replayAt} onScrub={setReplayAt} timeStart={timeStart} now={now} dark={dark} windowChoice={windowChoice} windowMs={windowMs} onWindow={setWindowChoice} onReorder={(o) => void reorder(o)} liveOpen={liveOpen} />
+          <MapView state={state} shown={shown} history={history} activity={activity} selected={selected} hovered={hovered} onSelect={setSelected} onHover={setHovered} replayAt={replayAt} onScrub={setReplayAt} timeStart={timeStart} now={now} dark={dark} windowChoice={windowChoice} windowMs={windowMs} onWindow={setWindowChoice} onReorder={(o) => void reorder(o)} liveOpen={liveOpen} onAction={(t, a) => void act(t, a)} />
         )}
         {taskId && current && <TaskView task={current} state={state} activity={activity[current.id] ?? []} now={now} busy={busy} dark={dark} onAction={(t, a) => void act(t, a)} />}
         {taskId && !current && state && <div className="h-full grid place-items-center text-sm text-muted-foreground">No task {taskId}.</div>}

@@ -9,10 +9,11 @@ import { StatusIcon } from "@/components/StatusIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type ActivityEvent, api, elapsed, navigate, short, type StateView, STATUS_LABEL, type TaskView as TaskRow } from "@/lib/api";
+import { type ActivityEvent, api, elapsed, HOLDABLE, navigate, short, type StateView, STATUS_LABEL, type TaskAction, type TaskView as TaskRow } from "@/lib/api";
 import { pickWindow } from "@/lib/city";
+import { recoverChunk } from "@/lib/lazy";
 
-const City = dynamic(() => import("@/components/City"), { ssr: false });
+const City = dynamic(recoverChunk(() => import("@/components/City")), { ssr: false });
 
 function Gauge({ label, value, threshold, max = 1, tone = "blue" }: { label: string; value: number | null | undefined; threshold?: number; max?: number; tone?: "blue" | "amber" }) {
   const v = value == null || Number.isNaN(value) ? null : value;
@@ -44,7 +45,7 @@ export function TaskView({
   now: number;
   busy: boolean;
   dark: boolean;
-  onAction: (task: TaskRow, action: "approve" | "retry" | "abandon") => void;
+  onAction: (task: TaskRow, action: TaskAction) => void;
 }) {
   const [diff, setDiff] = useState<string | null>(null);
   const [tab, setTab] = useState("map");
@@ -67,11 +68,16 @@ export function TaskView({
         <StatusIcon status={task.status} />
         <h1 className="text-sm font-medium truncate flex-1">{task.goal}</h1>
         <Badge variant="outline">{STATUS_LABEL[task.status]}</Badge>
-        {task.hold && <Badge variant="secondary">review mode</Badge>}
+        {task.hold && <Badge variant="secondary">held: merges only with your approval</Badge>}
         {task.resolved && <Badge variant="secondary">conflict resolved by agent</Badge>}
         {task.status === "needs_review" && (
           <Button size="sm" disabled={busy} onClick={() => onAction(task, "approve")}>
             Approve merge
+          </Button>
+        )}
+        {HOLDABLE.includes(task.status) && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, task.hold ? "release" : "hold")}>
+            {task.hold ? "Release hold" : "Hold for review"}
           </Button>
         )}
         {["failed", "blocked", "needs_review", "abandoned"].includes(task.status) && (

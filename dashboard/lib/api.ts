@@ -174,6 +174,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Hold a change so it never merges unattended, or release it back into the lock. */
+export async function setHold(taskId: string, hold: boolean): Promise<void> {
+  await api(`/api/tasks/${encodeURIComponent(taskId)}/hold`, { method: "POST", body: JSON.stringify({ hold }) });
+}
+
+export type TaskAction = "approve" | "retry" | "abandon" | "hold" | "release";
+export const HOLDABLE: TaskStatus[] = ["queued", "running", "ready", "needs_review"];
+
 /** Pin the lock order; an empty list hands the choice back to Clef. */
 export async function setLockOrder(project: string, order: string[]): Promise<void> {
   await api(`/api/projects/${encodeURIComponent(project)}/lock`, { method: "PUT", body: JSON.stringify({ order }) });

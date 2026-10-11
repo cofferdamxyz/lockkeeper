@@ -146,7 +146,8 @@ function Floor({ city, p, compact }: { city: CityModel; p: Palette; compact: boo
     return { points, colors };
   }, [city.maxRadius, city.sectors, p]);
   const labels = useMemo(() => {
-    const all = city.sectors.filter((s) => (compact ? s.top : true));
+    // Narrow sub-sectors would print over their neighbours; their parent's label carries them.
+    const all = city.sectors.filter((s) => (compact ? s.top : s.top || s.a1 - s.a0 > 0.16));
     return (all.length > 28 ? all.filter((s) => s.top) : all).map((s) => {
       const mid = (s.a0 + s.a1) / 2;
       const rr = s.hasDirs ? ringRadius(s.ringDepth) - 0.62 : ringRadius(s.ringDepth) + (s.path === "/" ? 0.85 : 0.62);
@@ -554,10 +555,10 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
         </Html>
       )}
       {/* ticks */}
-      {city.ticks.filter((t) => t.y < H - 0.01).map((t) => (
-        <group key={t.label}>
+      {city.ticks.filter((t) => t.y < H - 0.01).map((t, i) => (
+        <group key={i}>
           <Ring r={t.label.endsWith("h") ? 0.14 : 0.09} tube={0.004} y={t.y} color={p.ring} emissive={0.3} />
-          {!compact && (
+          {!compact && t.label && (
             <Html position={[0, t.y, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
               <div className="scene-tick">{t.label}</div>
             </Html>

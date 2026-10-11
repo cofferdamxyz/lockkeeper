@@ -9,10 +9,11 @@ import { Timeline } from "@/components/Timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { type ActivityEvent, api, type CommitDetail, elapsed, type FileDetail, type HistoryItem, navigate, short, type StateView, STATUS_LABEL } from "@/lib/api";
+import { type ActivityEvent, api, type CommitDetail, elapsed, type FileDetail, HOLDABLE, type HistoryItem, navigate, short, type StateView, STATUS_LABEL, type TaskAction, type TaskView } from "@/lib/api";
 import { buildCity, type City as CityModel, type LockCandidate, windowLabel } from "@/lib/city";
+import { recoverChunk } from "@/lib/lazy";
 
-const City = dynamic(() => import("@/components/City"), { ssr: false, loading: () => <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">Loading the scene…</div> });
+const City = dynamic(recoverChunk(() => import("@/components/City")), { ssr: false, loading: () => <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">Loading the scene…</div> });
 
 export type WindowChoice = "auto" | number;
 const WINDOW_CHOICES: { label: string; value: WindowChoice }[] = [
@@ -317,6 +318,7 @@ export function MapView({
   onWindow,
   onReorder,
   liveOpen,
+  onAction,
 }: {
   state: StateView | null;
   shown: StateView | null;
@@ -336,10 +338,20 @@ export function MapView({
   onWindow: (w: WindowChoice) => void;
   onReorder: (order: string[]) => void;
   liveOpen: boolean;
+  onAction: (task: TaskView, action: TaskAction) => void;
 }) {
   const projectId = state?.project?.id ?? "sample-api";
-  const city = useMemo(() => (shown ? buildCity(shown, { now, windowMs, activity, at: replayAt }) : null), [shown, now, windowMs, activity, replayAt]);
+  // The clock ticks every second; the strata only need to move every few seconds.
+  const cityNow = Math.floor(now / 5000) * 5000;
+  const city = useMemo(() => (shown ? buildCity(shown, { now: cityNow, windowMs, activity, at: replayAt }) : null), [shown, cityNow, windowMs, activity, replayAt]);
   const [legend, setLegend] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onSelect(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSelect]);
   const selTask = shown?.tasks.find((t) => t.id === selected) ?? null;
   const selPos = shown?.positions.find((p) => p.id === selected) ?? null;
   const selMerge = selected?.startsWith("merge:") ? Number(selected.slice(6)) : null;
@@ -351,7 +363,7 @@ export function MapView({
   return (
     <div className="relative h-full">
       <div className={`absolute inset-y-0 left-0 ${panelWidth} transition-[right] duration-200`}>
-        {shown && city ? <City state={shown} city={city} activity={activity} now={now} at={replayAt} windowMs={windowMs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onScrub={onScrub} onReorder={onReorder} dark={dark} /> : null}
+        {shown && city ? <City state={shown} city={city} activity={activity} now={cityNow} at={replayAt} windowMs={windowMs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onScrub={onScrub} onReorder={onReorder} dark={dark} /> : null}
         <div className="absolute top-3 left-3 flex flex-col gap-2 items-start">
           <div className="glass rounded-lg px-3 py-1.5 mono text-[11px] text-muted-foreground flex items-center gap-4">
             <span>main <span className="text-foreground">{short(shown?.project?.head)}</span></span>
@@ -424,9 +436,21 @@ export function MapView({
                 </Button>
               </div>
               <div className="px-4 py-3 space-y-3">
-                <Button size="sm" onClick={() => navigate(`/task/${selTask.id}`)}>
-                  <ExternalLink className="size-3.5" /> Open session
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => navigate(`/task/${selTask.id}`)}>
+                    <ExternalLink className="size-3.5" /> Open session
+                  </Button>
+                  {selTask.status === "needs_review" && (
+                    <Button size="sm" variant="outline" onClick={() => onAction(selTask, "approve")}>
+                      Approve merge
+                    </Button>
+                  )}
+                  {HOLDABLE.includes(selTask.status) && (
+                    <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => onAction(selTask, selTask.hold ? "release" : "hold")}>
+                      {selTask.hold ? "Release hold" : "Hold for review"}
+                    </Button>
+                  )}
+                </div>
                 {(() => {
                   const b = city?.byTask.get(selTask.id);
                   const files = b ? b.files : selTask.files;
