@@ -2,7 +2,7 @@
 
 import { Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { type ComponentRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ComponentRef, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 import type { ActivityEvent, StateView } from "@/lib/api";
@@ -61,6 +61,9 @@ function palette(dark: boolean) {
     : { bg: "#f3f5fa", grid: "#d5dce9", gridFar: "#e8ecf4", ring: "#aab7d0", sep: "#c3cddf", column: "#2b3a55", settled: "#5674a8", mergePlate: "#3b5584", dimK: 0.55 };
 }
 type Palette = ReturnType<typeof palette>;
+
+/** Labels keep a readable size on a small canvas: the factor shrinks with the width. */
+const LabelScale = createContext(12);
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -122,6 +125,7 @@ function boxEdges(cx: number, cy: number, cz: number, sx: number, sy: number, sz
 // ---------------------------------------------------------------- floor
 
 function Floor({ city, p, compact }: { city: CityModel; p: Palette; compact: boolean }) {
+  const df = useContext(LabelScale);
   const { points, colors } = useMemo(() => {
     const points: Vec3[] = [];
     const colors: string[] = [];
@@ -159,7 +163,7 @@ function Floor({ city, p, compact }: { city: CityModel; p: Palette; compact: boo
     <>
       <Segments points={points} colors={colors} />
       {labels.map((l) => (
-        <Html key={l.key} position={l.pos} center distanceFactor={12} style={{ pointerEvents: "none" }}>
+        <Html key={l.key} position={l.pos} center distanceFactor={df} style={{ pointerEvents: "none" }}>
           <div className="scene-dir">{l.text}</div>
         </Html>
       ))}
@@ -510,6 +514,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
 }) {
   void project;
   const { camera } = useThree();
+  const df = useContext(LabelScale);
   const lockRef = useRef<THREE.Mesh>(null);
   const [drag, setDrag] = useState<null | { kind: "now" } | { kind: "chamber"; id: string; order: string[] }>(null);
   useFrame(({ clock }) => {
@@ -553,7 +558,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
         <meshBasicMaterial color={CERULEAN} transparent opacity={0.1} side={THREE.DoubleSide} />
       </mesh>
       {!compact && (
-        <Html position={[0, 0.02, LOCK_R + 0.2]} center distanceFactor={11} style={{ pointerEvents: "none" }}>
+        <Html position={[0, 0.02, LOCK_R + 0.2]} center distanceFactor={df * 0.92} style={{ pointerEvents: "none" }}>
           <div className="scene-label gate" style={{ transform: "none" }}>
             lock{city.lock.length ? ` · next ${city.lock[0].task.id.slice(-4)}` : ""}
           </div>
@@ -564,7 +569,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
         <group key={i}>
           <Ring r={t.major ? 0.14 : 0.09} tube={0.004} y={t.y} color={p.ring} emissive={0.3} />
           {!compact && t.label && (
-            <Html position={[0, t.y, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+            <Html position={[0, t.y, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
               <div className="scene-tick">{t.label}</div>
             </Html>
           )}
@@ -581,7 +586,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
           <Ring r={0.07} tube={0.004} y={f.y0} color={p.ring} emissive={0.2} />
           <Ring r={0.07} tube={0.004} y={f.y1} color={p.ring} emissive={0.2} />
           {!compact && (
-            <Html position={[-0.12, (f.y0 + f.y1) / 2, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+            <Html position={[-0.12, (f.y0 + f.y1) / 2, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
               <div className="scene-tick fold">{durationLabel(f.to - f.from)} quiet</div>
             </Html>
           )}
@@ -597,7 +602,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
             <Ring r={COLUMN_R} tube={picked === id ? 0.014 : 0.008} y={m.y} color={on ? color : tint(color, p.dimK)} emissive={on ? 0.8 : 0.2} onClick={() => onSelect(id)} onHover={(h) => onHover(h ? id : null)} />
             {m.kind === "resolved" && <Ring r={COLUMN_R + 0.055} tube={0.005} y={m.y} color={on ? color : tint(color, p.dimK)} emissive={on ? 0.6 : 0.15} opacity={0.9} />}
             {!compact && labelled.has(m.id) && (
-              <Html position={[labelled.get(m.id) === "left" ? -0.3 : 0.3, m.y, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+              <Html position={[labelled.get(m.id) === "left" ? -0.3 : 0.3, m.y, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
                 <div className={`scene-label ${labelled.get(m.id) === "left" ? "right" : ""}`}>
                   <span className="mono">{m.task.slice(-4)}</span>
                   <span className="text-muted-foreground"> · {m.kind}{m.score !== null ? ` ${m.score.toFixed(2)}` : ""}</span>
@@ -650,7 +655,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
               <meshPhongMaterial color={on ? c.color : tint(c.color, p.dimK)} emissive={c.color} emissiveIntensity={dragging ? 1 : on ? 0.55 : 0.1} transparent opacity={0.92} />
             </mesh>
             {!compact && (on || dragging) && (
-              <Html position={[0.3, 0, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+              <Html position={[0.3, 0, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
                 <div className="scene-label">
                   <span className="dot" style={{ background: c.color }} />
                   <span className="mono">{c.task.id.slice(-4)}</span>
@@ -692,14 +697,14 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
         <meshPhongMaterial color={CERULEAN} emissive={CERULEAN} emissiveIntensity={at === null ? 1.1 : 1.6} />
       </mesh>
       {!compact && (
-        <Html position={[0.36, city.top, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+        <Html position={[0.36, city.top, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
           <div className={`scene-tick now ${at === null ? "" : "replay"}`}>{topLabel}</div>
         </Html>
       )}
       {/* the rim of the moment shown */}
       <Segments points={segmentsOf(circle(city.maxRadius + 0.8, city.top))} colors={Array.from({ length: 128 }, () => p.ring)} opacity={at === null ? 0.5 : 0.9} />
       {!compact && (
-        <Html position={[0, H + 0.5, 0]} center distanceFactor={12} style={{ pointerEvents: "none" }}>
+        <Html position={[0, H + 0.5, 0]} center distanceFactor={df} style={{ pointerEvents: "none" }}>
           <div className="scene-main">main</div>
         </Html>
       )}
@@ -710,6 +715,7 @@ function Column({ city, lit, p, at, compact, merging, picked, project, onSelect,
 // ---------------------------------------------------------------- agents and overlaps
 
 function Beacon({ a, city, lit, picked, compact, onSelect, onHover }: { a: CityModel["agents"][number]; city: CityModel; lit: Lit; picked: string | null; compact: boolean; onSelect: (id: string) => void; onHover: (id: string | null) => void }) {
+  const df = useContext(LabelScale);
   const ref = useRef<THREE.Group>(null);
   const target = useRef(new THREE.Vector3(...a.pos));
   useEffect(() => {
@@ -740,7 +746,7 @@ function Beacon({ a, city, lit, picked, compact, onSelect, onHover }: { a: CityM
           <meshPhongMaterial color={color} emissive={color} emissiveIntensity={!on ? 0.15 : reading ? 0.5 : 1.1} shininess={100} specular="#ffffff" transparent={reading || !on} opacity={!on ? 0.45 : reading ? 0.75 : 1} />
         </mesh>
         {(on || picked === a.task.id) && (
-          <Html position={[0.14, 0.1, 0]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+          <Html position={[0.14, 0.1, 0]} distanceFactor={df} style={{ pointerEvents: "none" }}>
             <div className="scene-agent" style={{ color }}>{label}</div>
           </Html>
         )}
@@ -750,6 +756,7 @@ function Beacon({ a, city, lit, picked, compact, onSelect, onHover }: { a: CityM
 }
 
 function Halos({ city, compact }: { city: CityModel; compact: boolean }) {
+  const df = useContext(LabelScale);
   return (
     <>
       {[...city.overlaps.entries()].map(([path, ids]) => {
@@ -763,7 +770,7 @@ function Halos({ city, compact }: { city: CityModel; compact: boolean }) {
               <meshBasicMaterial color={RED} transparent opacity={0.95} side={THREE.DoubleSide} />
             </mesh>
             {!compact && (
-              <Html position={[0, 0, r + 0.1]} center distanceFactor={12} style={{ pointerEvents: "none" }}>
+              <Html position={[0, 0, r + 0.1]} center distanceFactor={df} style={{ pointerEvents: "none" }}>
                 <div className="scene-halo">overlap · {ids.length} agents</div>
               </Html>
             )}
@@ -775,12 +782,13 @@ function Halos({ city, compact }: { city: CityModel; compact: boolean }) {
 }
 
 function PickedLabel({ city, picked, project }: { city: CityModel; picked: string | null; project: string }) {
+  const df = useContext(LabelScale);
   if (!picked) return null;
   if (picked.startsWith(`file:${project}:`)) {
     const f = city.byPath.get(picked.slice(`file:${project}:`.length));
     if (!f) return null;
     return (
-      <Html position={[f.x, f.height + 0.08, f.z]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+      <Html position={[f.x, f.height + 0.08, f.z]} distanceFactor={df} style={{ pointerEvents: "none" }}>
         <div className="scene-label">
           <span className="mono">{f.path}</span>
           {f.ghost && <span className="text-muted-foreground"> · not on main yet</span>}
@@ -794,7 +802,7 @@ function PickedLabel({ city, picked, project }: { city: CityModel; picked: strin
     const f = c?.files.map((p) => city.byPath.get(p)).find((x) => x !== undefined);
     if (!c || !f) return null;
     return (
-      <Html position={[f.x, c.y + 0.06, f.z]} distanceFactor={12} style={{ pointerEvents: "none" }}>
+      <Html position={[f.x, c.y + 0.06, f.z]} distanceFactor={df} style={{ pointerEvents: "none" }}>
         <div className="scene-label">
           <span className="mono text-blue-400">{c.sha.slice(0, 7)}</span> {c.message.slice(0, 56)}
           <span className="text-muted-foreground"> · {c.files.length} file{c.files.length === 1 ? "" : "s"}</span>
@@ -821,8 +829,10 @@ function Content(props: CityProps) {
   useEffect(() => {
     if (controls.current) controls.current.enabled = !dragging;
   }, [dragging]);
+  const width = useThree((s) => s.size.width);
+  const df = 12 * Math.min(1, Math.max(0.5, width / 1400));
   return (
-    <>
+    <LabelScale.Provider value={df}>
       <hemisphereLight args={["#8fb6ff", dark ? "#0a0f1e" : "#dfe6f5", 0.9]} />
       <directionalLight position={[6, 10, 4]} intensity={1.3} />
       <pointLight position={[0, 0.6, 0]} color={CERULEAN} intensity={6} distance={7} decay={2} />
@@ -838,7 +848,7 @@ function Content(props: CityProps) {
       <Halos city={city} compact={!!compact} />
       {!compact && <PickedLabel city={city} picked={picked} project={project} />}
       <OrbitControls ref={controls} target={[0, 0.9, 0]} rotateSpeed={0.35} enablePan={false} minDistance={3} maxDistance={60} autoRotate={!selected && !hovered && !dragging && !focus} autoRotateSpeed={0.35} enableDamping dampingFactor={0.08} makeDefault />
-    </>
+    </LabelScale.Provider>
   );
 }
 
