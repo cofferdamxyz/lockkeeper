@@ -60,7 +60,10 @@ export async function listFiles(
   opts: { maxFiles?: number; maxBytes?: number } = {},
 ): Promise<{ path: string; text: string }[]> {
   const r = await env.ARTIFACTS.get(repo);
-  const commit = await r.readCommit(ref);
+  // readCommit takes a hash; resolve the ref through the log first.
+  const head = (await r.log({ ref, limit: 1 }))[0];
+  if (!head) return [];
+  const commit = await r.readCommit(head.hash);
   if (!commit) return [];
   const out: { path: string; text: string }[] = [];
   const maxFiles = opts.maxFiles ?? 400;

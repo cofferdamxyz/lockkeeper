@@ -18,6 +18,11 @@ type Bindings = { Bindings: LockkeeperEnv };
 
 const app = new Hono<Bindings>();
 
+app.onError((err, c) => {
+  console.error("request failed", c.req.method, c.req.path, err instanceof Error ? err.stack : String(err));
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+});
+
 app.get("/health", (c) => c.json({ ok: true, projects: config.projects.map((p) => p.id) }));
 
 // Bearer token for everything under /api. Access replaces this for an organisation's deployment.
