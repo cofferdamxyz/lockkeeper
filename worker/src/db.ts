@@ -104,6 +104,15 @@ export async function updateTask(
     .prepare(`UPDATE tasks SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`)
     .bind(...values, id)
     .run();
+  if (patch.status) await recordStatus(db, id, patch.status);
+}
+
+/** Every status change is an event, so the timeline can replay a run. */
+export async function recordStatus(db: D1Database, taskId: string, status: TaskStatus): Promise<void> {
+  await db
+    .prepare("INSERT INTO events (type, dedupe, payload_json) VALUES ('task.status', NULL, ?)")
+    .bind(JSON.stringify({ task: taskId, status }))
+    .run();
 }
 
 export async function setSetting(db: D1Database, key: string, value: string): Promise<void> {

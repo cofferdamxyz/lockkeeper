@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 
+import { parseActivity } from "./activity";
+
 import config from "../../lockkeeper.config";
 import { deleteRepo } from "./artifacts";
 import { getProject, getSetting, getTask, listTasks, setSetting, updateTask, upsertProject } from "./db";
@@ -125,6 +127,40 @@ app.get("/api/tasks/:id", async (c) => {
   const task = await getTask(c.env.DB, c.req.param("id"));
   if (!task) return c.json({ error: "not found" }, 404);
   return c.json(task);
+});
+
+/** The agent's stream parsed into reads, edits, commands, notes and the outcome. */
+app.get("/api/tasks/:id/events", async (c) => {
+  const task = await getTask(c.env.DB, c.req.param("id"));
+  if (!task) return c.json({ error: "not found" }, 404);
+  let raw = task.events_tail ?? "";
+  if (task.status === "running") {
+    const live = await c.env.SANDBOX.getByName(`agent-${task.id}`).readTail(200).catch(() => "");
+    if (live) raw = live;
+  }
+  return c.json({ id: task.id, status: task.status, events: parseActivity(raw) });
+});
+
+/** Everything with a timestamp, oldest first: status changes, decisions, merges, pushes. */
+app.get("/api/history", async (c) => {
+  const project = c.req.query("project") ?? config.projects[0].id;
+  const statuses = await c.env.DB.prepare(
+    `SELECT e.at AS at, json_extract(e.payload_json, '$.task') AS task, json_extract(e.payload_json, '$.status') AS status
+     FROM events e JOIN tasks t ON t.id = json_extract(e.payload_json, '$.task')
+     WHERE e.type = 'task.status' AND t.project = ? ORDER BY e.id`,
+  )
+    .bind(project)
+    .all<{ at: string; task: string; status: string }>();
+  const decisions = await c.env.DB.prepare("SELECT id, at, chosen, candidates_json FROM decisions WHERE project = ? ORDER BY at").bind(project).all<{ id: string; at: string; chosen: string | null; candidates_json: string }>();
+  const merges = await c.env.DB.prepare("SELECT id, at, task_id, mode, main_after, conflict, resolved_by FROM merges WHERE project = ? ORDER BY at").bind(project).all<{ id: number; at: string; task_id: string; mode: string; main_after: string | null; conflict: number; resolved_by: string | null }>();
+  const pushes = await c.env.DB.prepare("SELECT at, ref, after_sha FROM pushes WHERE project = ? ORDER BY at").bind(project).all<{ at: string; ref: string; after_sha: string | null }>();
+  const items = [
+    ...statuses.results.map((s) => ({ at: s.at, kind: "status" as const, task: s.task, status: s.status })),
+    ...decisions.results.map((d) => ({ at: d.at, kind: "decision" as const, id: d.id, chosen: d.chosen, candidates: (JSON.parse(d.candidates_json) as { id: string }[]).map((x) => x.id) })),
+    ...merges.results.map((m) => ({ at: m.at, kind: "merge" as const, task: m.task_id, mode: m.mode, mainAfter: m.main_after, conflict: m.conflict === 1, resolvedBy: m.resolved_by })),
+    ...pushes.results.map((p) => ({ at: p.at, kind: "push" as const, ref: p.ref, sha: p.after_sha })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  return c.json({ project, items });
 });
 
 app.get("/api/tasks/:id/tail", async (c) => {

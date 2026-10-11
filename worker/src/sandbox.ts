@@ -488,7 +488,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     }
     const outcome: AgentOutcome =
       how.state === "timeout" ? { isError: true, error: `agent exceeded ${task.maxMinutes} minutes` } : await this.#claudeOutcome(how.exitCode);
-    const tail = await this.readTail(80);
+    const tail = await this.readTail(200);
     try {
       // Harvest whatever the agent left, even after a failure, so the ledger shows the work.
       await this.#run(["sh", "-c", `git ${GIT_IDENTITY.join(" ")} add -A && git ${GIT_IDENTITY.join(" ")} commit -q -m "Lockkeeper: uncommitted changes left by the agent" || true`], REPO_DIR, {});

@@ -1,6 +1,6 @@
 import config from "../../lockkeeper.config";
 import { deleteRepo, forkForTask, grantRepoToken, headSha } from "./artifacts";
-import { getProject, getTask, listTasks, newId, type TaskRow, updateTask } from "./db";
+import { getProject, getTask, listTasks, newId, recordStatus, type TaskRow, updateTask } from "./db";
 import type { LockkeeperEnv } from "./env";
 import { projectPosition } from "./repomap";
 import { embed, nearest, taskText, taskVectorId, upsertVectors } from "./vectors";
@@ -56,6 +56,7 @@ export async function createTasks(env: LockkeeperEnv, ctx: { waitUntil(promise: 
     )
       .bind(id, projectId, goal, brief, project.head_sha)
       .run();
+    await recordStatus(env.DB, id, "queued");
     await indexTask(env, projectId, { id, goal, status: "queued" }, vectors[i]);
     const row = (await getTask(env.DB, id))!;
     created.push(row);
@@ -103,6 +104,7 @@ export async function createManualTask(env: LockkeeperEnv, projectId: string, go
   )
     .bind(id, projectId, goal, fork.name, fork.remote, project.head_sha)
     .run();
+  await recordStatus(env.DB, id, "running");
   await indexTask(env, projectId, { id, goal, status: "running" });
   const repo = await env.ARTIFACTS.get(fork.name);
   const token = await repo.createToken("write", 3600);
