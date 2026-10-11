@@ -31,7 +31,7 @@ uses the names Cloudflare developers already know.
 | merge Workflow | Workflow | collects ready tasks, asks Clef, performs merges in order |
 | decision | Clef response | the recorded answers for one merge round |
 | decision log | Artifacts repository | the why behind each merge, versioned in git |
-| dashboard, map | Next.js static export + React Three Fiber on Workers static assets | the 3D view of the index and the panel |
+| dashboard, map | Next.js static export + React Three Fiber on Workers static assets | the camera scene over the index, with the panels |
 
 ## 2. Why a merge queue is not enough
 
@@ -262,17 +262,23 @@ agent's stream beside map, diff and decision tabs, a work list, and the
 Map view as the live visualisation of what is happening in Artifacts.
 
 **Stack.** Next.js static export served as the Worker's assets, set in
-Inter. Pts draws the map on a canvas. shadcn/ui (Tailwind 4) is the
-chrome: everything you read or press. Motion moves things between the
-two. No three.js. Dark by default on a neutral scale with one accent,
-blue, reserved for live agents, the gate and the moment a merge lands; a
-light scheme is a toggle.
+Inter. three.js through React Three Fiber draws the map as a camera scene.
+shadcn/ui (Tailwind 4) is the chrome: everything you read or press. Motion
+moves things between the two. Dark by default on a neutral scale with one
+accent, blue, reserved for live agents, commits, the gate and the moment a
+merge lands; a light scheme is a toggle.
 
-**The map (Pts).**
+**The map (three.js).** A scene you orbit, zoom and pan, where every point
+is clickable: a file opens its content with the commits and agents that
+touched it, a commit opens its message, author, files and the session
+that produced it, an agent opens a link to its session.
 
-- Files sit where the projection puts them; the third axis becomes depth
-  (size and weight). A Voronoi tessellation over the file points turns
-  directories into labelled territories drawn as hairlines.
+- Files sit where the projection puts them in three dimensions, coloured
+  by directory, with the directory's name floating at its centroid.
+- Every commit on the default branch, including the agents' own commits
+  on merged branches, is a point: embedded from its message and the files
+  it changed, then pulled toward those files. New commits land with a
+  short animation.
 - Agents are nodes: hollow while queued, breathing while running, trailing
   while moving. Status is geometry (dashed ring waiting for a human, a bar
   when blocked, a cut when failed); colour is spent only on live agents.
@@ -289,8 +295,8 @@ light scheme is a toggle.
   goal embeds. Drag pans, wheel zooms, depth gives parallax.
 - Faint ticks on a node echo its activity (reading, editing, testing), so
   the map alone says who is doing what.
-- Commits land as points beside the files they touched when a merge
-  reaches `main`, so the map accumulates the history of the work.
+- The map therefore accumulates the whole history of the work, and the
+  timeline replays it commit by commit.
 
 **The chrome (shadcn/ui).**
 

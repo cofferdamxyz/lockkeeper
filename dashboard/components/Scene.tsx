@@ -8,7 +8,7 @@ import type { Group, Mesh } from "three";
 import { type ActivityEvent, isLive, type PositionView, type StateView, type TaskView } from "@/lib/api";
 
 const S = 3.2;
-const GATE: [number, number, number] = [5.2, 0.4, 0];
+const GATE: [number, number, number] = [6.2, 0.3, 0];
 
 export interface SceneProps {
   state: StateView;
@@ -62,7 +62,7 @@ function FilePoint({ p, dark, hovered, selected, onSelect, onHover }: { p: Posit
       <sphereGeometry args={[lit ? 0.085 : 0.055, 18, 18]} />
       <meshStandardMaterial color={color} emissive={color} emissiveIntensity={lit ? 1 : 0.35} />
       {lit && (
-        <Html distanceFactor={9} style={{ pointerEvents: "none" }}>
+        <Html distanceFactor={12} style={{ pointerEvents: "none" }}>
           <div className="scene-label">{p.label}</div>
         </Html>
       )}
@@ -99,7 +99,7 @@ function CommitPoint({ p, hovered, selected, focus, onSelect, onHover, born }: {
       <octahedronGeometry args={[0.075, 0]} />
       <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={hovered || selected || focus ? 1.2 : 0.55} transparent opacity={0.95} />
       {(hovered || selected) && (
-        <Html distanceFactor={9} style={{ pointerEvents: "none" }}>
+        <Html distanceFactor={12} style={{ pointerEvents: "none" }}>
           <div className="scene-label">
             <span className="mono text-blue-400">{p.meta?.sha?.slice(0, 7)}</span> {p.label}
           </div>
@@ -163,7 +163,7 @@ function TaskNode({ task, position, selected, hovered, focus, acts, onSelect, on
         );
       })}
       {(selected || hovered || focus || (isLive(task.status) && task.status !== "queued")) && (
-        <Html distanceFactor={9} position={[0.22, 0, 0]} style={{ pointerEvents: "none" }}>
+        <Html distanceFactor={12} position={[0.22, 0, 0]} style={{ pointerEvents: "none" }}>
           <div className={`scene-label ${task.status}`}>
             <span className="dot" style={{ background: color }} /> {task.id.slice(-4)} · {task.goal.slice(0, 48)}
             {task.goal.length > 48 ? "…" : ""}
@@ -182,10 +182,10 @@ function Gate({ busy, head }: { busy: boolean; head: string | null }) {
   return (
     <group position={GATE}>
       <mesh ref={ref}>
-        <torusGeometry args={[0.7, 0.03, 16, 96]} />
+        <torusGeometry args={[0.5, 0.025, 16, 96]} />
         <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={busy ? 1.4 : 0.6} />
       </mesh>
-      <Html distanceFactor={9} position={[0, -1.05, 0]} style={{ pointerEvents: "none" }}>
+      <Html distanceFactor={14} position={[0, -0.8, 0]} style={{ pointerEvents: "none" }}>
         <div className="scene-label gate">
           merge gate · main <span className="mono">{head ? head.slice(0, 7) : "—"}</span>
         </div>
@@ -297,14 +297,14 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
       {ripples.map((t0, i) => (
         <Ripple key={`${t0}-${i}`} t0={t0} onDone={() => setRipples((r) => r.filter((x) => x !== t0))} />
       ))}
-      <OrbitControls enableDamping dampingFactor={0.08} minDistance={1.5} maxDistance={30} autoRotate={!selected && !hovered} autoRotateSpeed={0.25} makeDefault />
+      <OrbitControls enableDamping dampingFactor={0.08} minDistance={1.5} maxDistance={30} autoRotate={!selected && !hovered} autoRotateSpeed={0.12} target={[0.6, 0, 0]} makeDefault />
     </>
   );
 }
 
 export default function Scene(props: SceneProps) {
   return (
-    <Canvas camera={{ position: [0.8, 2.6, 9], fov: 46 }} dpr={[1, 2]} onPointerMissed={() => props.onSelect(null)} style={{ position: "absolute", inset: 0 }}>
+    <Canvas camera={{ position: [1.2, 2.2, 8.5], fov: 44 }} dpr={[1, 2]} onPointerMissed={() => props.onSelect(null)} style={{ position: "absolute", inset: 0 }}>
       <color attach="background" args={[props.dark ? "#0a0a0a" : "#fafafa"]} />
       <fog attach="fog" args={[props.dark ? "#0a0a0a" : "#fafafa", 14, 30]} />
       <Content {...props} />
