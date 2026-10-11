@@ -520,6 +520,9 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11: a change a person approved keeps its approval when the
+  resolver agent reconciles a conflict on the way in; it no longer waits
+  for a second approval (the conflict row records `approved_by`).
 - 2026-10-11: the map rebuilt as the strata city (decision 0011 in the
   Cofferdam decision log): repository on the floor, time as height,
   `main` as the column with merge rings and the lock chamber, agents as

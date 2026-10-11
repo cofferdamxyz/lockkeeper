@@ -186,10 +186,11 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
 
   if (attempt.conflict) {
     const mergedGoals = (await recentMerges(env, project)).map((m) => m.goal);
+    // A person's approval survives the resolver: the row remembers it, pollResolve restores it.
     await env.DB.prepare(
-      "INSERT INTO merges (task_id, project, decision_id, mode, main_before, conflict, output) VALUES (?, ?, ?, 'conflict', ?, 1, ?)",
+      "INSERT INTO merges (task_id, project, decision_id, mode, main_before, conflict, approved_by, output) VALUES (?, ?, ?, 'conflict', ?, 1, ?, ?)",
     )
-      .bind(chosen.id, project, decisionId, attempt.mainBefore, `conflicted: ${attempt.conflictedFiles.join(", ")}`)
+      .bind(chosen.id, project, decisionId, attempt.mainBefore, approved.length > 0 ? "dashboard" : null, `conflicted: ${attempt.conflictedFiles.join(", ")}`)
       .run();
     await stub.startResolve({
       taskId: chosen.id,
@@ -274,8 +275,10 @@ export async function pollResolve(env: LockkeeperEnv, project: string, taskId: s
   if (!task) return { kind: "done" };
   if (status.state === "succeeded" && status.testsOk) {
     await stub.pushMergeToFork({ taskId });
+    const conflictRow = await env.DB.prepare("SELECT approved_by FROM merges WHERE task_id = ? AND mode = 'conflict' ORDER BY at DESC LIMIT 1").bind(taskId).first<{ approved_by: string | null }>();
+    const restored: "approved" | "ready" = conflictRow?.approved_by ? "approved" : "ready";
     await updateTask(env.DB, taskId, {
-      status: "ready",
+      status: restored,
       resolved: 1,
       head_sha: status.mergeSha,
       summary: `${task.summary ?? ""}\n\nResolver: ${status.summary}`.trim(),
@@ -284,7 +287,7 @@ export async function pollResolve(env: LockkeeperEnv, project: string, taskId: s
     await env.DB.prepare("UPDATE merges SET resolved_by = 'agent', output = ? WHERE task_id = ? AND mode = 'conflict' AND resolved_by IS NULL")
       .bind(`resolved by agent; tests green at ${status.mergeSha}`, taskId)
       .run();
-    await notify(env, project, { type: "task", task: taskId, status: "ready" });
+    await notify(env, project, { type: "task", task: taskId, status: restored });
     return { kind: "done" };
   }
   const reason = status.state === "succeeded" ? "resolver finished but tests failed" : status.state === "failed" ? status.error : "no resolver run";
