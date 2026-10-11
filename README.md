@@ -68,10 +68,12 @@ enters the merge round like an agent's.
 Open the Worker URL. The page asks for the dashboard token once and keeps
 it in the browser; `?token=…` in the URL also works and is stripped on
 load. The shape is the one coding-agent apps made familiar: a sidebar
-with the project and its sessions, a home screen with the prompt box
-(one line per agent, auto merge or hold for review), the project bar and
-an on-your-radar list, a session view with the agent's stream beside
-map, diff and decision tabs, and a work list.
+with the project and its sessions and a getting-started card that walks
+a new deployment through its five setup steps, a home screen with a
+fleet summary, the composer (one line per agent; the base and the merge
+mode as chips above it, ⇧Tab toggles the mode) and starters that fill
+it, open the lock or replay the last session, a session view with the
+agent's stream beside map, diff and decision tabs, and a work list.
 
 The Map view is the strata city: the repository is the floor (rings are
 directory depth, sectors are directories, blocks are files, with files

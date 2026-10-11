@@ -136,6 +136,14 @@ export function setToken(token: string): void {
   }
 }
 
+export function clearToken(): void {
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // nothing stored
+  }
+}
+
 export function projectFromUrl(): string {
   if (typeof window === "undefined") return "sample-api";
   return new URL(window.location.href).searchParams.get("project") ?? "sample-api";

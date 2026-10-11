@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { setupSteps } from "@/components/GettingStarted";
 import { Palette } from "@/components/Palette";
 import type { LaunchMode } from "@/components/Prompt";
 import { Sidebar } from "@/components/Sidebar";
@@ -13,7 +14,7 @@ import { Home } from "@/components/views/Home";
 import { MapView, type WindowChoice } from "@/components/views/MapView";
 import { TaskView } from "@/components/views/TaskView";
 import { TasksView } from "@/components/views/TasksView";
-import { type ActivityEvent, api, connectLive, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setHold, setLockOrder, setToken, type StateView, type TaskAction, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
+import { type ActivityEvent, api, clearToken, connectLive, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setHold, setLockOrder, setToken, type StateView, type TaskAction, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
 import { pickWindow } from "@/lib/city";
 
 const ANNOUNCE: Partial<Record<TaskStatus, (t: TaskRow) => void>> = {
@@ -24,7 +25,6 @@ const ANNOUNCE: Partial<Record<TaskStatus, (t: TaskRow) => void>> = {
   blocked: (t) => toast.error(`${t.id.slice(-4)} is blocked`, { description: t.error?.slice(0, 100) }),
 };
 
-type Quick = "artifacts" | "github" | "url" | "project" | null;
 
 function useRoute(): string {
   const [route, setRoute] = useState("/");
@@ -47,7 +47,8 @@ export default function Dashboard() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [replayAt, setReplayAt] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [quick, setQuick] = useState<Quick>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [host, setHost] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   // Narrow windows start with the sidebar folded; the toggle still works.
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setHasToken(getToken() !== null);
+    setHost(window.location.host);
     try {
       window.sessionStorage.removeItem("lk_chunk_reload");
     } catch {
@@ -201,6 +203,30 @@ export default function Dashboard() {
       setBusy(false);
     }
   }
+  /** One-off setup calls from the getting-started card; the state poll shows their effect. */
+  async function setupCall(path: string, started: string) {
+    setBusy(true);
+    try {
+      await api(path, { method: "POST" });
+      toast(started);
+      await refresh();
+    } catch (e) {
+      toast.error("That did not work", { description: String(e).slice(0, 160) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  function replayLast() {
+    const last = state?.merges.find((m) => m.main_after);
+    if (!last) return;
+    setReplayAt(new Date(last.at).getTime() + 1000);
+    setSelected(`merge:${last.id}`);
+    navigate("/map");
+  }
+  function forgetToken() {
+    clearToken();
+    window.location.reload();
+  }
   async function reorder(order: string[]) {
     try {
       await setLockOrder(project, order);
@@ -251,18 +277,26 @@ export default function Dashboard() {
   }
 
   const remote = state?.project?.remote ?? "<remote>";
-  const quickCopy: Record<Exclude<Quick, null>, { title: string; body: string; code: string }> = {
-    artifacts: { title: "Use an Artifacts repository", body: "Lockkeeper works on a repository in its own Artifacts namespace. Register the project, then push your code to it with a short-lived write token.", code: `curl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/${project}/register\ncurl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/${project}/token\ngit -c http.extraHeader="Authorization: Bearer <write token>" push ${remote} main` },
-    github: { title: "Import from GitHub", body: "Artifacts imports public HTTPS remotes directly. Private repositories reach it through a push from CI with a write token.", code: `# in the Worker: env.ARTIFACTS.import({ source: { url: "https://github.com/<owner>/<repo>", branch: "main" }, target: { name: "${project}" } })` },
-    url: { title: "Clone from URL", body: "Any public git URL can seed the project repository; the project's main becomes the base every agent forks from.", code: `git clone <url> && cd <repo>\ngit -c http.extraHeader="Authorization: Bearer <write token>" push ${remote} main` },
-    project: { title: "Add project", body: "Projects are declared in lockkeeper.config.ts (repository, conventions file, test command, merge mode) and registered once.", code: `curl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/<id>/register` },
-  };
+  const recipes = [
+    { title: "Push your code to the project repository", body: "Lockkeeper works on a repository in its own Artifacts namespace. Register the project, mint a short-lived write token, push.", code: `curl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/${project}/register\ncurl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/${project}/token\ngit -c http.extraHeader="Authorization: Bearer <write token>" push ${remote} main` },
+    { title: "Import from GitHub or any public URL", body: "Artifacts imports public HTTPS remotes directly; private repositories arrive by a push from CI with a write token.", code: `# in the Worker: env.ARTIFACTS.import({ source: { url: "https://github.com/<owner>/<repo>", branch: "main" }, target: { name: "${project}" } })\n# or: git clone <url> && git -c http.extraHeader="Authorization: Bearer <write token>" push ${remote} main` },
+    { title: "Add another project", body: "Projects are declared in lockkeeper.config.ts (repository, conventions file, test command, merge mode) and registered once.", code: `curl -X POST -H "Authorization: Bearer $TOKEN" $URL/api/projects/<id>/register` },
+  ];
+  const setup = state
+    ? setupSteps(state, {
+        bootstrap: () => void setupCall("/api/admin/bootstrap", "Building the agent image; this takes a few minutes"),
+        register: () => void setupCall(`/api/projects/${encodeURIComponent(project)}/register`, "Project registered"),
+        push: () => setAddOpen(true),
+        index: () => void setupCall(`/api/projects/${encodeURIComponent(project)}/index`, "Indexing the repository"),
+        launch: () => navigate("/"),
+      })
+    : null;
 
   return (
     <div className="fixed inset-0 flex overflow-hidden">
-      <Sidebar route={route} projectId={project} tasks={state?.tasks ?? []} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} onSearch={() => setPaletteOpen(true)} onAddProject={() => setQuick("project")} dark={dark} onToggleTheme={() => setTheme(dark ? "light" : "dark")} />
+      <Sidebar route={route} projectId={project} tasks={state?.tasks ?? []} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} onSearch={() => setPaletteOpen(true)} onAddProject={() => setAddOpen(true)} dark={dark} onToggleTheme={() => setTheme(dark ? "light" : "dark")} setup={setup} busy={busy} host={host} onForgetToken={forgetToken} />
       <main className="flex-1 min-w-0 h-full">
-        {route === "/" && <Home state={state} projectId={project} now={now} busy={busy} onLaunch={launch} onAddProject={() => setQuick("project")} onQuick={setQuick} />}
+        {route === "/" && <Home state={state} projectId={project} now={now} busy={busy} onLaunch={launch} onAddProject={() => setAddOpen(true)} onReplayLast={replayLast} />}
         {route === "/tasks" && <TasksView tasks={state?.tasks ?? []} now={now} />}
         {route === "/map" && (
           <MapView state={state} shown={shown} history={history} activity={activity} selected={selected} hovered={hovered} onSelect={setSelected} onHover={setHovered} replayAt={replayAt} onScrub={setReplayAt} timeStart={timeStart} now={now} dark={dark} windowChoice={windowChoice} windowMs={windowMs} onWindow={setWindowChoice} onReorder={(o) => void reorder(o)} liveOpen={liveOpen} onAction={(t, a) => void act(t, a)} />
@@ -291,17 +325,21 @@ export default function Dashboard() {
         onToggleTheme={() => setTheme(dark ? "light" : "dark")}
         dark={dark}
       />
-      <Dialog open={quick !== null} onOpenChange={(o) => !o && setQuick(null)}>
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-lg">
-          {quick && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{quickCopy[quick].title}</DialogTitle>
-                <DialogDescription>{quickCopy[quick].body}</DialogDescription>
-              </DialogHeader>
-              <pre className="mono text-[11px] rounded-lg bg-muted/50 p-3 whitespace-pre-wrap break-words">{quickCopy[quick].code}</pre>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle>Projects and code</DialogTitle>
+            <DialogDescription>How code reaches the repository the agents fork.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-auto">
+            {recipes.map((r) => (
+              <div key={r.title}>
+                <div className="text-sm font-medium">{r.title}</div>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">{r.body}</p>
+                <pre className="mono text-[11px] rounded-lg bg-muted/50 p-3 whitespace-pre-wrap break-words">{r.code}</pre>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

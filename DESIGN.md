@@ -275,10 +275,22 @@ Anything else was cut.
 
 **Shape.** The layout follows the coding-agent apps people already use: a
 sidebar with the project and its sessions, a home screen whose centre is
-the prompt box (one line per agent; auto merge or hold for review beside
-it), the project bar and an on-your-radar list, a session view with the
-agent's stream beside map, diff and decision tabs, a work list, and the
-Map view as the live visualisation of what is happening in Artifacts.
+the composer, a session view with the agent's stream beside map, diff
+and decision tabs, a work list, and the Map view as the live
+visualisation of what is happening in Artifacts. The home screen opens
+with a one-line fleet summary (working, needs you, merged today, or "all
+quiet"). The two decisions an operator makes before launching sit above
+the composer as chips: where the agents start from (`main` at its sha)
+and how their work lands (auto merge or hold for review, also ⇧Tab). One
+goal per line launches one agent each. Under the composer, four starters
+do things rather than open dialogs: fill the box with the demo's three
+overlapping goals, switch to review mode, open the lock, replay the last
+session. The radar's heading says what the list is for: needs you, in
+flight, or recent. The sidebar ends with a getting-started card that
+reads the state (image built, project registered, code pushed,
+repository indexed, first agent launched), offers the next step as a
+button and disappears when all five are done, then the deployment host
+with the scheme toggle and a way to forget the token.
 
 **Stack.** Next.js static export served as the Worker's assets, set in
 Inter. three.js through React Three Fiber draws the map as a camera scene
@@ -538,6 +550,11 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11 (evening, after looking at Cursor's agent home): the
+  composer's decisions move above the box as chips with a ⇧Tab toggle;
+  four starters that act replace the dialog buttons; a getting-started
+  card with progress and an account row in the sidebar; one projects
+  dialog holds the push and import recipes.
 - 2026-10-11 (evening, after a design critique): time runs at two speeds
   on the column, with quiet stretches folded into labelled breaks and
   clock-time ticks; merge labels capped at three; one colour grammar

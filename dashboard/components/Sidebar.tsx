@@ -1,7 +1,8 @@
 "use client";
 
-import { FolderGit2, House, ListChecks, Map as MapIcon, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun } from "lucide-react";
+import { FolderGit2, House, ListChecks, LogOut, Map as MapIcon, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun } from "lucide-react";
 
+import { GettingStarted, type SetupStep } from "@/components/GettingStarted";
 import { StatusIcon } from "@/components/StatusIcon";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,6 +18,10 @@ export function Sidebar({
   onAddProject,
   dark,
   onToggleTheme,
+  setup,
+  busy,
+  host,
+  onForgetToken,
 }: {
   route: string;
   projectId: string;
@@ -27,6 +32,10 @@ export function Sidebar({
   onAddProject: () => void;
   dark: boolean;
   onToggleTheme: () => void;
+  setup: SetupStep[] | null;
+  busy: boolean;
+  host: string;
+  onForgetToken: () => void;
 }) {
   const nav = [
     { href: "/", label: "Home", icon: House },
@@ -95,14 +104,21 @@ export function Sidebar({
                 <span className="truncate">{t.goal}</span>
               </button>
             ))}
-            {sessions.length === 0 && <p className="pl-7 pr-2 py-1 text-xs text-muted-foreground">No sessions yet.</p>}
+            {sessions.length === 0 && <p className="pl-7 pr-2 py-1 text-xs text-muted-foreground">No agents yet.</p>}
           </div>
         </div>
       )}
-      <div className="mt-auto p-2 flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="size-8" aria-label="Toggle colour scheme" onClick={onToggleTheme}>
-          {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </Button>
+      <div className="mt-auto flex flex-col">
+        {!collapsed && setup && <GettingStarted steps={setup} busy={busy} />}
+        <div className="p-2 flex items-center gap-1 border-t">
+          {!collapsed && <span className="mono text-[11px] text-muted-foreground truncate px-1 flex-1" title={host}>{host}</span>}
+          <Button variant="ghost" size="icon" className="size-8" aria-label="Toggle colour scheme" onClick={onToggleTheme}>
+            {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Forget the dashboard token" onClick={onForgetToken}>
+            <LogOut className="size-4" />
+          </Button>
+        </div>
       </div>
     </aside>
   );
