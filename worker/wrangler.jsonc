@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lockkeeper",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "workers_dev": true,
+
+  // The dashboard is a Next.js static export; the Worker answers /api first.
+  "assets": {
+    "directory": "../dashboard/out",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health"]
+  },
+
+  "vars": {
+    // Account that owns the AI Gateway and the Artifacts namespace.
+    "AI_GATEWAY_ACCOUNT_ID": "b4d6490fc23c08e8117f0eaa1b82997d",
+    "AI_GATEWAY_ID": "default",
+    "ARTIFACTS_NAMESPACE": "lockkeeper",
+    // Pinned toolchain inside the agent sandbox snapshot.
+    "CLAUDE_CODE_VERSION": "2.1.296"
+  },
+  "secrets": { "required": ["AI_GATEWAY_TOKEN", "DASHBOARD_TOKEN"] },
+
+  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "lockkeeper" }],
+  "ai": { "binding": "AI" },
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "lockkeeper-index" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lockkeeper",
+      "database_id": "c3a899b7-94bc-4061-9fa4-d53cce751d42",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      { "queue": "lockkeeper-events", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3 }
+    ]
+  },
+  "workflows": [
+    { "binding": "MERGE_WORKFLOW", "name": "lockkeeper-merge", "class_name": "MergeWorkflow" }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "SANDBOX", "class_name": "AgentSandbox" }]
+  },
+  // Managed image (cloudflare/debian-trixie) plus a bootstrap snapshot: no Docker needed.
+  "containers": [{ "class_name": "AgentSandbox", "scheduling_policy": "durable_object" }],
+  "exports": {
+    "AgentSandbox": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

@@ -1,0 +1,9 @@
+packages:
+  - worker
+  - dashboard
+  - sample-api
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
