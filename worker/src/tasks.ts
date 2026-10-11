@@ -40,7 +40,7 @@ export async function buildBrief(env: LockkeeperEnv, project: string, goal: stri
 }
 
 /** Create one task per goal: fork, token, brief, vector, sandbox. */
-export async function createTasks(env: LockkeeperEnv, ctx: { waitUntil(promise: Promise<unknown>): void }, projectId: string, goals: string[]): Promise<TaskRow[]> {
+export async function createTasks(env: LockkeeperEnv, ctx: { waitUntil(promise: Promise<unknown>): void }, projectId: string, goals: string[], opts: { hold?: boolean } = {}): Promise<TaskRow[]> {
   const pc = projectConfig(projectId);
   const project = await getProject(env.DB, projectId);
   if (!project) throw new Error(`project ${projectId} is not registered; POST /api/projects/${projectId}/register first`);
@@ -52,9 +52,9 @@ export async function createTasks(env: LockkeeperEnv, ctx: { waitUntil(promise: 
     const id = newId("t");
     const brief = await buildBrief(env, projectId, goal, vectors[i], id);
     await env.DB.prepare(
-      `INSERT INTO tasks (id, project, goal, brief, status, base_sha) VALUES (?, ?, ?, ?, 'queued', ?)`,
+      `INSERT INTO tasks (id, project, goal, brief, status, base_sha, hold) VALUES (?, ?, ?, ?, 'queued', ?, ?)`,
     )
-      .bind(id, projectId, goal, brief, project.head_sha)
+      .bind(id, projectId, goal, brief, project.head_sha, opts.hold ? 1 : 0)
       .run();
     await recordStatus(env.DB, id, "queued");
     await indexTask(env, projectId, { id, goal, status: "queued" }, vectors[i]);
@@ -227,8 +227,48 @@ export async function triggerMerge(env: LockkeeperEnv, project: string): Promise
   }
 }
 
-export async function markMerged(env: LockkeeperEnv, task: TaskRow, mainAfter: string): Promise<void> {
+/** Every commit that landed with a merge becomes a point on the map and a vector in the index. */
+export async function indexCommits(env: LockkeeperEnv, task: TaskRow, mainBefore: string | null, mainAfter: string): Promise<void> {
+  const project = await getProject(env.DB, task.project);
+  if (!project) return;
+  const repo = await env.ARTIFACTS.get(project.repo);
+  const log = await repo.log({ ref: mainAfter, limit: 60 });
+  const landed: typeof log = [];
+  for (const c of log) {
+    if (mainBefore && c.hash === mainBefore) break;
+    landed.push(c);
+  }
+  if (landed.length === 0) return;
+  const files = task.files_json ? (JSON.parse(task.files_json) as string[]) : [];
+  const texts = landed.map((c) => `Commit: ${c.message.split("\n")[0].slice(0, 200)}\nFiles: ${files.join(", ")}\nGoal: ${task.goal}`);
+  const vectors = await embed(env, texts);
+  await upsertVectors(
+    env,
+    landed.map((c, i) => ({
+      id: `commit:${task.project}:${c.hash}`,
+      values: vectors[i],
+      metadata: { kind: "commit" as const, project: task.project, task: task.id, status: "merged", paths: files.slice(0, 40).join(","), label: c.message.split("\n")[0].slice(0, 200) },
+    })),
+  );
+  for (let i = 0; i < landed.length; i++) {
+    const c = landed[i];
+    await projectPosition(env, task.project, {
+      id: `commit:${task.project}:${c.hash}`,
+      kind: "commit",
+      label: c.message.split("\n")[0].slice(0, 120),
+      values: vectors[i],
+      meta: { task: task.id, sha: c.hash, merge: i === 0, author: c.author?.name ?? null, files: files.slice(0, 12) },
+    });
+  }
+}
+
+export async function markMerged(env: LockkeeperEnv, task: TaskRow, mainAfter: string, mainBefore: string | null = null): Promise<void> {
   await updateTask(env.DB, task.id, { status: "merged" });
+  try {
+    await indexCommits(env, task, mainBefore, mainAfter);
+  } catch (e) {
+    console.warn("commit indexing failed", task.id, String(e));
+  }
   await indexTask(env, task.project, {
     id: task.id,
     goal: task.goal,

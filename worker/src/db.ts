@@ -33,6 +33,7 @@ export interface TaskRow {
   cost_usd: number | null;
   restarts: number;
   resolved: number;
+  hold: number;
   created_at: string;
   updated_at: string;
 }

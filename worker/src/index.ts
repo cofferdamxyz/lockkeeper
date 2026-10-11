@@ -85,7 +85,7 @@ app.get("/api/projects/:id/state", async (c) => c.json(await getState(c.env, c.r
 app.get("/api/state", async (c) => c.json(await getState(c.env, c.req.query("project") ?? config.projects[0].id)));
 
 app.post("/api/tasks", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { project?: string; goals?: string[] | string; goal?: string };
+  const body = (await c.req.json().catch(() => ({}))) as { project?: string; goals?: string[] | string; goal?: string; mode?: "auto" | "review" };
   const projectId = body.project ?? config.projects[0].id;
   const goals = Array.isArray(body.goals)
     ? body.goals
@@ -98,7 +98,7 @@ app.post("/api/tasks", async (c) => {
   if (clean.length === 0) return c.json({ error: "no goals" }, 400);
   if (clean.length > 12) return c.json({ error: "at most 12 goals per launch" }, 400);
   if ((await getSetting(c.env.DB, SNAPSHOT_SETTING)) === null) return c.json({ error: "no agent snapshot yet; POST /api/admin/bootstrap first" }, 409);
-  const tasks = await createTasks(c.env, c.executionCtx, projectId, clean);
+  const tasks = await createTasks(c.env, c.executionCtx, projectId, clean, { hold: body.mode === "review" });
   return c.json({ tasks: tasks.map((t) => ({ id: t.id, goal: t.goal, status: t.status })) }, 202);
 });
 

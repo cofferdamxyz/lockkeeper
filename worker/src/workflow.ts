@@ -148,7 +148,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
     const p = decision.unattended[chosen.id];
     const risk = decision.risk[chosen.id];
     const threshold = chosen.resolved === 1 ? config.clef.unattendedAfterResolve : config.clef.unattended;
-    unattendedOk = Number.isFinite(p) && p >= threshold && Number.isFinite(risk) && risk <= config.clef.maxRisk && chosen.tests_ok === 1;
+    unattendedOk = chosen.hold !== 1 && Number.isFinite(p) && p >= threshold && Number.isFinite(risk) && risk <= config.clef.maxRisk && chosen.tests_ok === 1;
   }
 
   await updateTask(env.DB, chosen.id, { status: "merging" });
@@ -213,9 +213,11 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
 
   if (!unattendedOk) {
     await stub.abortMerge();
-    const why = decision
-      ? `Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])}`
-      : "no decision";
+    const why = chosen.hold === 1
+      ? `launched in review mode${decision ? ` (Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])})` : ""}`
+      : decision
+        ? `Clef: unattended ${fmt(decision.unattended[chosen.id])}, risk ${fmt(decision.risk[chosen.id])}`
+        : "no decision";
     await updateTask(env.DB, chosen.id, { status: "needs_review", error: `held for review (${why})` });
     await env.DB.prepare(
       "INSERT INTO merges (task_id, project, decision_id, mode, main_before, conflict, output) VALUES (?, ?, ?, 'needs_review', ?, 0, ?)",
@@ -242,7 +244,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
       attempt.output.slice(-4000),
     )
     .run();
-  await markMerged(env, chosen, mainAfter);
+  await markMerged(env, chosen, mainAfter, attempt.mainBefore);
   try {
     await indexProject(env, project);
   } catch (e) {

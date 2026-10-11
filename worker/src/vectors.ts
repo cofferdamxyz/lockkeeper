@@ -108,7 +108,7 @@ function normalize(v: number[]): number {
 }
 
 export interface TaskVectorMeta {
-  kind: "task" | "file";
+  kind: "task" | "file" | "commit";
   project: string;
   task?: string;
   status?: string;

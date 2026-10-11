@@ -88,6 +88,7 @@ export async function getState(env: LockkeeperEnv, projectId: string) {
       costUsd: t.cost_usd,
       restarts: t.restarts,
       resolved: t.resolved === 1,
+      hold: t.hold === 1,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
     })),

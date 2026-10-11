@@ -58,7 +58,7 @@ export async function indexProject(env: LockkeeperEnv, projectId: string, opts: 
 export async function projectPosition(
   env: LockkeeperEnv,
   projectId: string,
-  p: { id: string; kind: "task" | "file"; label: string; values: number[]; meta: Record<string, unknown> },
+  p: { id: string; kind: "task" | "file" | "commit"; label: string; values: number[]; meta: Record<string, unknown> },
 ): Promise<void> {
   const project = await getProject(env.DB, projectId);
   if (!project?.basis_json) return;
