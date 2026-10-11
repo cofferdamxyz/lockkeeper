@@ -23,7 +23,7 @@ export function agentPrompt(p: {
     `- Stay inside the goal. Do not refactor, rename or reformat files the goal does not need; another agent may be editing them.`,
     `- When your goal and another agent's work touch the same file, keep your change small and additive so the merge stays clean.`,
     `- Run the tests with \`${p.testCommand}\` before you finish and make them pass. Add tests for behaviour you add.`,
-    `- Commit your work with git as you go. Each commit message states the intent in one line, then explains the change. Do not push; the harness pushes your fork.`,
+    `- Work in small commits, three or four where the goal allows: for example a failing test, the implementation, then cleanup or docs. Each commit message states the step in one line, then explains it. Never squash into one commit at the end. Do not push; the harness pushes your fork.`,
     `- Do not install new dependencies unless the goal requires them, and say so in the commit message if you do.`,
     `- Finish with a short summary of what changed, which files, and anything the merge should know.`,
   ].join("\n");

@@ -279,19 +279,25 @@ that produced it, an agent opens a link to its session.
   on the ring. Angle is time: the oldest moment sits at the start of a
   300° arc, now sits at its end, and the gap marks the present, so a
   radial line is one moment across the whole history.
-- **Every branch is an arc on a concentric ring.** A task's fork leaves
-  `main` with a short spoke at its base commit, carries its commits as
-  beads along its arc, and folds back with a spoke to the merge bead on
-  `main`. Rings are lanes: a merged branch frees its lane for a later
-  branch whose arc does not overlap it in time, so the picture stays
-  compact however long the history gets.
-- **Agents ride the tip of a live arc**, hovering above the ground by the
-  distance still to go before merging: queued high, descending while
-  running, touching the ground when ready, then travelling to the centre
-  when the lock merges them. A change waiting for review holds at its arc
-  tip with an amber dashed spoke toward `main`. A conflict paints the arc
-  red while the resolver works. Overlap between in-flight work is a line
-  between arc tips.
+- **Every branch is an arc on its own orbital plane.** A task's fork
+  leaves `main` along the node line at its base commit, climbs to its
+  inclination a quarter turn later and comes back down, carrying its
+  commits as beads along the arc and folding back with a spoke to the
+  merge bead on `main`. Radius is the lane (a merged branch frees its lane
+  for a later branch whose arc does not overlap it in time) and the
+  inclination cycles per agent through 22.5°, −45°, 67.5°, −90° and so on,
+  so concurrent agents ride visibly different planes and the picture stays
+  three-dimensional and compact however long the history gets.
+- **Agents ride the tip of a live arc**, hovering along their plane's
+  normal by the distance still to go before merging: queued far out,
+  descending while running, touching the plane when ready, then
+  travelling to the centre when the lock merges them. A change waiting
+  for review holds at its arc tip with an amber dashed spoke toward
+  `main`. A conflict paints the arc red while the resolver works. Overlap
+  between in-flight work is a line between agents.
+- **Agents commit in steps.** The prompt asks for three or four commits
+  where the goal allows (a failing test, the implementation, cleanup), so
+  a branch reads as a sequence of beads rather than one.
 - **Files have no place in this space.** Angle is time and radius is
   branch, and a file is neither, so the map draws commits only: every bead
   is sized by the files its commit changed, hour marks sit along `main`,

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Color, type Group, type Mesh } from "three";
 
 import { type ActivityEvent, type StateView, type TaskView } from "@/lib/api";
-import { arcPoints, type Bead, beadRadius, type Branch, computeRings, hoverHeight, LANE_GAP, MAIN_RADIUS, type RingLayout, statusColor, type Vec3 } from "@/lib/rings";
+import { arcPoints, type Bead, beadRadius, type Branch, computeRings, hoverHeight, LANE_GAP, MAIN_RADIUS, orbitRing, type RingLayout, statusColor, type Vec3 } from "@/lib/rings";
 
 export interface SceneProps {
   state: StateView;
@@ -109,7 +109,11 @@ function Agent({ branch, now, selected, hovered, focus, acts, onSelect, onHover 
   const color = statusColor(task.status);
   const merging = task.status === "merging" || task.status === "approved";
   const height = hoverHeight(task, now);
-  const target = useMemo<Vec3>(() => (merging ? [branch.base[0] * 0.4, 0.3, branch.base[2] * 0.4] : [branch.tip[0], height, branch.tip[2]]), [branch.tip, branch.base, height, merging]);
+  const target = useMemo<Vec3>(() => {
+    if (merging) return [branch.base[0] * 0.4, 0.3, branch.base[2] * 0.4];
+    const n = branch.normal;
+    return [branch.tip[0] + n[0] * height, branch.tip[1] + n[1] * height, branch.tip[2] + n[2] * height];
+  }, [branch.tip, branch.base, branch.normal, height, merging]);
   const [pos, setPos] = useState<Vec3>(target);
   useFrame(({ clock }) => {
     const g = ref.current;
@@ -125,7 +129,7 @@ function Agent({ branch, now, selected, hovered, focus, acts, onSelect, onHover 
   const ticks = acts.filter((a) => a.kind === "tool").slice(-8);
   return (
     <>
-      {!merging && pos[1] > 0.05 && <Spoke from={[pos[0], 0, pos[2]]} to={pos} color={color} opacity={0.45} />}
+      {!merging && height > 0.05 && <Spoke from={branch.tip} to={pos} color={color} opacity={0.45} />}
       <group ref={ref} position={target}>
         <mesh
           onClick={(e) => {
@@ -248,13 +252,12 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
       <pointLight position={[-10, -6, -10]} decay={0} intensity={Math.PI * 0.6} />
       <Grid size={GRID} dark={dark} />
 
-      {/* lanes */}
-      {Array.from({ length: Math.max(layout.lanes, 1) }).map((_, i) => (
-        <mesh key={i} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[MAIN_RADIUS + LANE_GAP * (i + 1), 0.006, 6, 160]} />
-          <meshBasicMaterial color={dark ? "#1b2538" : "#d7dce6"} />
-        </mesh>
-      ))}
+      {/* orbital planes: a faint full ring for every live branch and for the lit one */}
+      {layout.branches
+        .filter((b) => b.live || litTask === b.task.id)
+        .map((b) => (
+          <Line key={`orbit-${b.task.id}`} points={orbitRing(b)} color={litTask === b.task.id ? "#ffffff" : dark ? "#2a3a5c" : "#c9d1de"} lineWidth={1} transparent opacity={litTask === b.task.id ? 0.35 : 0.5} />
+        ))}
 
       {/* branches: arc, base spoke, merge spoke */}
       {layout.branches.map((b) => {
@@ -262,14 +265,18 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         const isLit = litTask === t.id;
         const dim = litTask !== null && !isLit;
         const color = b.conflict ? "#ff1919" : isLit ? "#ffffff" : t.status === "merged" ? "#5a86c7" : statusColor(t.status);
-        const pts = arcPoints(layout, b.radius, b.uStart, b.uEnd);
+        const pts = arcPoints(b, b.uStart, b.uEnd);
         const tip = pts[pts.length - 1];
         const prev = pts[Math.max(0, pts.length - 2)];
-        const dir: Vec3 = [tip[0] - prev[0], 0, tip[2] - prev[2]];
-        const dl = Math.hypot(dir[0], dir[2]) || 1;
+        const d: Vec3 = [tip[0] - prev[0], tip[1] - prev[1], tip[2] - prev[2]];
+        const dl = Math.hypot(d[0], d[1], d[2]) || 1;
+        const f: Vec3 = [d[0] / dl, d[1] / dl, d[2] / dl];
+        const n = b.normal;
+        // the side vector lies in the orbital plane: normal × forward
+        const sd: Vec3 = [n[1] * f[2] - n[2] * f[1], n[2] * f[0] - n[0] * f[2], n[0] * f[1] - n[1] * f[0]];
         const ah = 0.16;
-        const left: Vec3 = [tip[0] - (dir[0] / dl) * ah - (dir[2] / dl) * ah * 0.5, 0, tip[2] - (dir[2] / dl) * ah + (dir[0] / dl) * ah * 0.5];
-        const right: Vec3 = [tip[0] - (dir[0] / dl) * ah + (dir[2] / dl) * ah * 0.5, 0, tip[2] - (dir[2] / dl) * ah - (dir[0] / dl) * ah * 0.5];
+        const left: Vec3 = [tip[0] - f[0] * ah - sd[0] * ah * 0.5, tip[1] - f[1] * ah - sd[1] * ah * 0.5, tip[2] - f[2] * ah - sd[2] * ah * 0.5];
+        const right: Vec3 = [tip[0] - f[0] * ah + sd[0] * ah * 0.5, tip[1] - f[1] * ah + sd[1] * ah * 0.5, tip[2] - f[2] * ah + sd[2] * ah * 0.5];
         return (
           <group key={t.id}>
             <Line points={pts} color={color} lineWidth={isLit ? 2.6 : b.live ? 2 : 1.4} transparent opacity={dim ? 0.25 : t.status === "merged" ? 0.75 : 1} />
@@ -320,7 +327,11 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         const b = layout.branches.find((x) => x.task.id === e.b);
         if (!a || !b) return null;
         const s = Math.max(e.cosine, e.paths);
-        return <Line key={i} points={[[a.tip[0], hoverHeight(a.task, now), a.tip[2]], [b.tip[0], hoverHeight(b.task, now), b.tip[2]]]} color={s > 0.7 ? "#ff1919" : s > 0.45 ? "#f5b94a" : "#8a97b3"} lineWidth={1 + s * 2} transparent opacity={0.7} />;
+        const ha = hoverHeight(a.task, now);
+        const hb = hoverHeight(b.task, now);
+        const pa: Vec3 = [a.tip[0] + a.normal[0] * ha, a.tip[1] + a.normal[1] * ha, a.tip[2] + a.normal[2] * ha];
+        const pb: Vec3 = [b.tip[0] + b.normal[0] * hb, b.tip[1] + b.normal[1] * hb, b.tip[2] + b.normal[2] * hb];
+        return <Line key={i} points={[pa, pb]} color={s > 0.7 ? "#ff1919" : s > 0.45 ? "#f5b94a" : "#8a97b3"} lineWidth={1 + s * 2} transparent opacity={0.7} />;
       })}
 
       <MainRing busy={merging} head={state.project?.head ?? null} />

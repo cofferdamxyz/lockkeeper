@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { StateView, TaskView } from "./api";
-import { computeRings, LANE_GAP, MAIN_RADIUS } from "./rings";
+import { computeRings, LANE_GAP, MAIN_RADIUS, orbitPointOf } from "./rings";
 
 const now = Date.now();
 const h = (n: number) => new Date(now - n * 3_600_000).toISOString();
@@ -45,7 +45,7 @@ describe("ring layout", () => {
     const byId = Object.fromEntries(l.beads.map((b) => [b.id, b]));
     expect(r(byId["commit:p:m1"].pos)).toBeCloseTo(MAIN_RADIUS);
     expect(r(byId["commit:p:root"].pos)).toBeCloseTo(MAIN_RADIUS);
-    expect(r(byId["commit:p:a1"].pos)).toBeCloseTo(MAIN_RADIUS + LANE_GAP);
+    expect(Math.hypot(...byId["commit:p:a1"].pos)).toBeCloseTo(MAIN_RADIUS + LANE_GAP);
   });
 
   it("numbers a branch's commits in order and marks hours along main", () => {
@@ -55,6 +55,21 @@ describe("ring layout", () => {
     expect(l.beads.find((b) => b.id === "commit:p:m1")!.seq).toBeNull();
     expect(l.ticks.length).toBeGreaterThan(0);
     expect(l.ticks.length).toBeLessThanOrEqual(8);
+  });
+
+  it("tilts each branch onto its own plane, crossing main's plane at the base commit", () => {
+    const l = computeRings(state, now);
+    const incl = l.branches.map((b) => b.inclination);
+    expect(new Set(incl).size).toBe(incl.length);
+    for (const b of l.branches) {
+      // the orbit passes through main's plane along the node line
+      const onNode = orbitPointOf(l.angle, b, l.tStart + (b.node - l.angle(l.tStart)) * 0);
+      void onNode;
+      const n = b.normal;
+      expect(Math.hypot(n[0], n[1], n[2])).toBeCloseTo(1);
+      // every bead of the branch lies on its plane: n · p = 0
+      for (const bead of b.beads) expect(Math.abs(n[0] * bead.pos[0] + n[1] * bead.pos[1] + n[2] * bead.pos[2])).toBeLessThan(1e-6);
+    }
   });
 
   it("maps time to angle monotonically and ends a live branch at now", () => {

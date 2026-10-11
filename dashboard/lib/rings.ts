@@ -4,6 +4,9 @@
  * whole history. A branch starts with a short spoke out from main at its base commit, carries its
  * commits as beads along its arc, and folds back into main with a spoke at its merge commit.
  * Rings are lanes: a merged branch frees its lane for a later branch whose arc does not overlap.
+ * Each branch ring is an orbital plane: it crosses main's plane along the node line through its
+ * base commit, climbs to its inclination a quarter turn later and comes back down, so concurrent
+ * agents ride visibly different planes. Agents hover along their plane's normal.
  * Files have no place in this space: they are attributes of commits and live in the panels.
  */
 import type { MergeView, PositionView, StateView, TaskStatus, TaskView } from "./api";
@@ -12,6 +15,8 @@ export type Vec3 = [number, number, number];
 
 export const MAIN_RADIUS = 1.5;
 export const LANE_GAP = 0.55;
+/** Inclinations cycle per agent so neighbouring branches never share a plane. */
+export const INCLINATIONS = [22.5, -45, 67.5, -90, 45, -22.5, 90, -67.5].map((d) => (d * Math.PI) / 180);
 const SPAN = (300 * Math.PI) / 180; // the arc of the circle that time occupies; the gap marks now
 const START = (120 * Math.PI) / 180; // where the oldest moment sits
 
@@ -33,6 +38,12 @@ export interface Branch {
   task: TaskView;
   lane: number;
   radius: number;
+  /** Angle of the node line (where the orbit crosses main's plane): the base commit's moment. */
+  node: number;
+  /** Tilt of the orbital plane from main's plane, in radians, signed. */
+  inclination: number;
+  /** Unit normal of the orbital plane. */
+  normal: Vec3;
   uStart: number;
   uEnd: number;
   live: boolean;
@@ -51,6 +62,8 @@ export interface RingLayout {
   lanes: number;
   angle: (t: number) => number;
   ringPoint: (radius: number, t: number, y?: number) => Vec3;
+  /** A point on a branch's orbit at a moment. */
+  orbitPoint: (b: Branch, t: number) => Vec3;
   branches: Branch[];
   beads: Bead[];
   /** Hour marks along main: a moment and its label. */
@@ -58,6 +71,26 @@ export interface RingLayout {
 }
 
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+
+/** Rodrigues rotation of p about the unit axis k by angle θ. */
+function rotate(p: Vec3, k: Vec3, theta: number): Vec3 {
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const kd = k[0] * p[0] + k[1] * p[1] + k[2] * p[2];
+  const cross: Vec3 = [k[1] * p[2] - k[2] * p[1], k[2] * p[0] - k[0] * p[2], k[0] * p[1] - k[1] * p[0]];
+  return [
+    p[0] * c + cross[0] * s + k[0] * kd * (1 - c),
+    p[1] * c + cross[1] * s + k[1] * kd * (1 - c),
+    p[2] * c + cross[2] * s + k[2] * kd * (1 - c),
+  ];
+}
+
+export function orbitPointOf(angleAt: (t: number) => number, b: Pick<Branch, "radius" | "node" | "inclination">, t: number): Vec3 {
+  const a = angleAt(t);
+  const flat: Vec3 = [Math.cos(a) * b.radius, 0, Math.sin(a) * b.radius];
+  const axis: Vec3 = [Math.cos(b.node), 0, Math.sin(b.node)];
+  return rotate(flat, axis, b.inclination);
+}
 
 export function computeRings(state: StateView, now: number): RingLayout {
   const commits = state.positions.filter((p) => p.kind === "commit" && p.meta?.at);
@@ -82,6 +115,8 @@ export function computeRings(state: StateView, now: number): RingLayout {
   const tasks = [...state.tasks].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const laneEnds: number[] = [];
   const branches: Branch[] = [];
+  const commitAt = new Map(commits.map((c) => [c.meta?.sha ?? "", new Date(c.meta!.at!).getTime()]));
+  let agentIndex = 0;
   for (const t of tasks) {
     const start = new Date(t.createdAt).getTime();
     if (start > now) continue;
@@ -97,28 +132,34 @@ export function computeRings(state: StateView, now: number): RingLayout {
       laneEnds.push(uEnd);
     } else laneEnds[lane] = uEnd;
     const radius = MAIN_RADIUS + LANE_GAP * (lane + 1);
+    // The orbit crosses main's plane at the base commit, so the branch lifts off from where it forked.
+    const baseAtKnown = t.baseSha ? commitAt.get(t.baseSha) : undefined;
+    const baseAt = baseAtKnown !== undefined && baseAtKnown <= now ? baseAtKnown : start;
+    const node = angle(baseAt);
+    const inclination = INCLINATIONS[agentIndex % INCLINATIONS.length];
+    agentIndex += 1;
+    const spec = { radius, node, inclination };
+    const normal = rotate([0, 1, 0], [Math.cos(node), 0, Math.sin(node)], inclination);
     branches.push({
       task: t,
       lane,
       radius,
+      node,
+      inclination,
+      normal,
       uStart,
       uEnd,
       live,
       mergedAt,
-      tip: ringPoint(radius, endT),
-      base: ringPoint(MAIN_RADIUS, start),
+      tip: orbitPointOf(angle, spec, endT),
+      base: ringPoint(MAIN_RADIUS, baseAt),
       mergeOnMain: mergedAt !== null && t.status === "merged" ? ringPoint(MAIN_RADIUS, mergedAt) : null,
       conflict: conflicts.has(t.id) && t.status === "merging",
       beads: [],
     });
   }
   const laneOf = new Map(branches.map((b) => [b.task.id, b]));
-  // A branch leaves main at its base commit when that commit is known, else at its creation time.
-  const commitAt = new Map(commits.map((c) => [c.meta?.sha ?? "", new Date(c.meta!.at!).getTime()]));
-  for (const b of branches) {
-    const baseAt = b.task.baseSha ? commitAt.get(b.task.baseSha) : undefined;
-    if (baseAt !== undefined && baseAt <= now) b.base = ringPoint(MAIN_RADIUS, baseAt);
-  }
+  const orbitPoint = (b: Branch, t: number) => orbitPointOf(angle, b, t);
 
   // Beads: commits on their branch's ring, or on main when they are merges or have no task.
   const beads: Bead[] = [];
@@ -137,7 +178,7 @@ export function computeRings(state: StateView, now: number): RingLayout {
       task,
       merge: !!c.meta?.merge,
       files: c.meta?.files ?? [],
-      pos: ringPoint(radius, at),
+      pos: onMain ? ringPoint(radius, at) : orbitPoint(branch!, at),
       ring: onMain ? 0 : branch!.lane + 1,
       seq: null,
     };
@@ -161,17 +202,29 @@ export function computeRings(state: StateView, now: number): RingLayout {
     ticks.push({ at: t, label: stepH >= 24 ? d.toLocaleDateString([], { month: "short", day: "numeric" }) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
   }
 
-  return { tStart, tEnd, lanes: laneEnds.length, angle, ringPoint, branches, beads, ticks };
+  return { tStart, tEnd, lanes: laneEnds.length, angle, ringPoint, orbitPoint, branches, beads, ticks };
 }
 
-/** Points along an arc of a ring between two moments, for drawing. */
-export function arcPoints(layout: RingLayout, radius: number, uStart: number, uEnd: number, y = 0, segments = 48): Vec3[] {
+/** Points along a branch's orbit between two fractions of the span, for drawing its arc. */
+export function arcPoints(b: Pick<Branch, "radius" | "node" | "inclination">, uStart: number, uEnd: number, segments = 48): Vec3[] {
   const out: Vec3[] = [];
   const n = Math.max(2, Math.round(segments * (uEnd - uStart) * 2) + 2);
+  const axis: Vec3 = [Math.cos(b.node), 0, Math.sin(b.node)];
   for (let i = 0; i <= n; i++) {
     const uu = uStart + ((uEnd - uStart) * i) / n;
     const a = START + SPAN * uu;
-    out.push([Math.cos(a) * radius, y, Math.sin(a) * radius]);
+    out.push(rotate([Math.cos(a) * b.radius, 0, Math.sin(a) * b.radius], axis, b.inclination));
+  }
+  return out;
+}
+
+/** The whole orbit of a branch, for the faint guide ring. */
+export function orbitRing(b: Pick<Branch, "radius" | "node" | "inclination">, segments = 96): Vec3[] {
+  const out: Vec3[] = [];
+  const axis: Vec3 = [Math.cos(b.node), 0, Math.sin(b.node)];
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    out.push(rotate([Math.cos(a) * b.radius, 0, Math.sin(a) * b.radius], axis, b.inclination));
   }
   return out;
 }
