@@ -136,7 +136,8 @@ function numberFrom(v: unknown): number {
   if (typeof v === "number") return v;
   if (v && typeof v === "object") {
     const o = v as Record<string, unknown>;
-    for (const k of ["probability", "score", "value", "answer", "yes"]) {
+    // Clef answers: { type: "noul", noul } and { type: "score", score, legend, probabilities, confidence }.
+    for (const k of ["noul", "score", "probability", "value", "answer", "yes"]) {
       if (typeof o[k] === "number") return o[k] as number;
     }
   }
