@@ -17,6 +17,10 @@ export interface ChartProps {
   /** Where new nodes are born on screen (the launcher), in CSS pixels. */
   birthAt: { x: number; y: number } | null;
   dark: boolean;
+  /** A task to keep lit, for the task view. */
+  focus?: string | null;
+  /** Fewer labels, for an embedded view. */
+  compact?: boolean;
 }
 
 interface Node {
@@ -51,7 +55,7 @@ function hashColor(key: string, dark: boolean): string {
  * maps them to the screen with pan, zoom and a little parallax by depth. Tasks are nodes that
  * glide toward their targets; the lock on the right edge stages every merge.
  */
-export default function Chart({ state, selected, hovered, onSelect, onHover, activity, birthAt, dark }: ChartProps) {
+export default function Chart({ state, selected, hovered, onSelect, onHover, activity, birthAt, dark, focus = null, compact = false }: ChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef<StateView | null>(state);
   const selectedRef = useRef(selected);
@@ -59,6 +63,10 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
   const activityRef = useRef(activity);
   const birthRef = useRef(birthAt);
   const darkRef = useRef(dark);
+  const focusRef = useRef(focus);
+  const compactRef = useRef(compact);
+  const commitSeen = useRef(new Map<string, number>());
+  const mounted = useRef(0);
   const nodes = useRef(new Map<string, Node>());
   const statuses = useRef(new Map<string, TaskStatus>());
   const ripples = useRef<Ripple[]>([]);
@@ -72,6 +80,8 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
   activityRef.current = activity;
   birthRef.current = birthAt;
   darkRef.current = dark;
+  focusRef.current = focus;
+  compactRef.current = compact;
   handlers.current = { onSelect, onHover };
 
   useEffect(() => {
@@ -215,7 +225,12 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
           form.fillOnly(c).point(new Pt(q), 1.6, "circle");
         });
       }
-      if (isSel || isHov || (isLive(t.status) && t.status !== "queued")) {
+      const isFocus = focusRef.current === t.id;
+      if (isFocus) {
+        form.strokeOnly(accent(), 1.2).alpha(0.9).point(p, base + 9, "circle");
+        form.alpha(1);
+      }
+      if (isSel || isHov || isFocus || (!compactRef.current && isLive(t.status) && t.status !== "queued")) {
         form.font(11, "normal", "normal", 1, "ui-monospace, Menlo, monospace");
         form.fillOnly(ink(isSel || isHov ? 0.95 : 0.7));
         const label = `${t.id.slice(-4)}  ${t.goal.slice(0, 44)}${t.goal.length > 44 ? "…" : ""}`;
@@ -303,6 +318,27 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
           form.alpha(1);
           if (isHov || isSel) {
             form.font(11, "normal", "normal", 1, "ui-monospace, Menlo, monospace").fillOnly(ink(0.9)).text(new Pt(f.x + 9, f.y + 4), f.label);
+          }
+        }
+        // commits: points that land beside the files they touched
+        if (!mounted.current) mounted.current = now;
+        for (const p of s.positions) {
+          if (p.kind !== "commit") continue;
+          let t0 = commitSeen.current.get(p.id);
+          if (t0 === undefined) {
+            t0 = now - mounted.current < 1500 ? -1 : now;
+            commitSeen.current.set(p.id, t0);
+          }
+          const k = t0 < 0 ? 1 : Math.min(1, (now - t0) / 700);
+          const { x, y } = toScreen(p.x, p.y, p.z);
+          const isHov = hoveredRef.current === p.id;
+          const isFocus = focusRef.current && p.meta?.task === focusRef.current;
+          const size = (p.meta?.merge ? 4.2 : 3.2) * Shaping.elasticOut(k) * (isHov || isFocus ? 1.6 : 1);
+          form.fillOnly(accent()).alpha(isHov || isFocus ? 0.95 : 0.55);
+          form.polygon(Group.fromArray([[x, y - size], [x + size, y], [x, y + size], [x - size, y]]));
+          form.alpha(1);
+          if (isHov) {
+            form.font(11, "normal", "normal", 1, "ui-monospace, Menlo, monospace").fillOnly(ink(0.9)).text(new Pt(x + 9, y + 4), p.label.slice(0, 60));
           }
         }
         // nodes: update targets
@@ -402,6 +438,13 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
       for (const f of screenFiles) {
         const d = Math.hypot(f.x - x, f.y - y);
         if (d < 9 && (!best || d < best.d)) best = { id: f.id, d };
+      }
+      if (best) return best.id;
+      for (const p of s.positions) {
+        if (p.kind !== "commit") continue;
+        const q = toScreen(p.x, p.y, p.z);
+        const d = Math.hypot(q.x - x, q.y - y);
+        if (d < 8 && (!best || d < best.d)) best = { id: p.id, d };
       }
       return best?.id ?? null;
     };

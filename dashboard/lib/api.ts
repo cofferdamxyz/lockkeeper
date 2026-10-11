@@ -19,18 +19,19 @@ export interface TaskView {
   costUsd: number | null;
   restarts: number;
   resolved: boolean;
+  hold: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface PositionView {
   id: string;
-  kind: "file" | "task";
+  kind: "file" | "task" | "commit";
   label: string;
   x: number;
   y: number;
   z: number;
-  meta: { dir?: string; bytes?: number; task?: string; status?: string } | null;
+  meta: { dir?: string; bytes?: number; task?: string; status?: string; sha?: string; merge?: boolean; author?: string | null; files?: string[] } | null;
 }
 
 export interface EdgeView { a: string; b: string; cosine: number; paths: number }
@@ -117,6 +118,29 @@ export function projectFromUrl(): string {
   return new URL(window.location.href).searchParams.get("project") ?? "sample-api";
 }
 
+export const STATUS_ICON: Record<TaskStatus, string> = {
+  queued: "circle-dashed",
+  running: "loader",
+  ready: "circle-dot",
+  merging: "git-merge",
+  needs_review: "git-pull-request",
+  approved: "git-pull-request",
+  merged: "check-circle",
+  blocked: "octagon-alert",
+  failed: "x-circle",
+  abandoned: "circle-off",
+};
+
+export function useHashRoute(): string {
+  if (typeof window === "undefined") return "/";
+  return window.location.hash.replace(/^#/, "") || "/";
+}
+
+export function navigate(route: string): void {
+  if (typeof window === "undefined") return;
+  window.location.hash = route;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers = new Headers(init.headers);
@@ -157,13 +181,22 @@ export function replayState(state: StateView, history: HistoryItem[], at: number
     if (new Date(h.at).getTime() > at) break;
     if (h.kind === "status") statusAt.set(h.task, h.status);
   }
+  const recorded = new Set(history.filter((h) => h.kind === "status").map((h) => (h as { task: string }).task));
   const tasks = state.tasks
     .filter((t) => new Date(t.createdAt).getTime() <= at)
-    .map((t) => ({ ...t, status: statusAt.get(t.id) ?? "queued" }));
+    .map((t) => {
+      // Tasks older than status recording are approximated: in flight until their last update.
+      const fallback: TaskStatus = recorded.has(t.id) ? "queued" : new Date(t.updatedAt).getTime() <= at ? t.status : "running";
+      return { ...t, status: statusAt.get(t.id) ?? fallback };
+    });
+  const commitsAt = new Set(
+    state.merges.filter((m) => m.main_after && new Date(m.at).getTime() <= at).map((m) => m.task_id),
+  );
   const live = new Set(tasks.filter((t) => isLive(t.status)).map((t) => t.id));
   return {
     ...state,
     tasks,
+    positions: state.positions.filter((p) => p.kind !== "commit" || (p.meta?.task && commitsAt.has(p.meta.task))),
     edges: state.edges.filter((e) => live.has(e.a) && live.has(e.b)),
     merges: state.merges.filter((m) => new Date(m.at).getTime() <= at),
     decisions: state.decisions.filter((d) => new Date(d.at).getTime() <= at),
