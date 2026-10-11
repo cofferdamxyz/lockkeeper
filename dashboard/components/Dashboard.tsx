@@ -48,6 +48,13 @@ export default function Dashboard() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [quick, setQuick] = useState<Quick>(null);
   const [collapsed, setCollapsed] = useState(false);
+  // Narrow windows start with the sidebar folded; the toggle still works.
+  useEffect(() => {
+    const apply = () => setCollapsed(window.innerWidth < 980);
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [hasToken, setHasToken] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
