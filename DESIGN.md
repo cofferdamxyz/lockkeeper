@@ -423,6 +423,9 @@ main_before, main_after, conflict, resolved_by, approved_by, at), `events`
 
 ## 10. The demo
 
+`DEMO.md` is the runbook: the goal set, the shot list and the narration.
+What follows is the plan as first written.
+
 Project `sample-api`: a small Hono Worker with a few JSON endpoints and a
 vitest suite, pushed to the project repository and connected to Workers
 Builds. Four goals launched together:

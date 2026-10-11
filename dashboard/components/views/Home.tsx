@@ -9,8 +9,13 @@ import { Radar } from "@/components/Radar";
 import { Button } from "@/components/ui/button";
 import { navigate, type StateView } from "@/lib/api";
 
-/** The demo's goal set: three changes, two of them overlapping, so the lock has something to decide. */
-const STARTER_GOALS = ["Add input validation with tests", "Add a rate-limiting middleware with tests", "Split the router into modules"];
+/** The demo's goal set (DEMO.md): four changes, two of them on the same route file, so the lock has something to decide. */
+const STARTER_GOALS = [
+  "Add GET /vessels/:id/visits returning the berths a vessel has moored at, newest first, with tests",
+  "Add DELETE /vessels/:id that removes a vessel and frees its berth, 404 when unknown, with tests",
+  "Add a request id middleware that sets an X-Request-Id header on every response, with tests",
+  "Add GET /stats/vessels summarising vessels moored and at sea, with tests",
+];
 
 export function Home({
   state,
@@ -37,7 +42,7 @@ export function Home({
   const landed = state?.merges.some((m) => m.main_after) ?? false;
   // Starters do things: fill the box, switch the mode, open the lock, replay. None opens a dialog of commands.
   const starters = [
-    { icon: GitFork, title: "Split a change into agents", body: "Three goals, three forks; the lock lands them in order", run: () => { setText(STARTER_GOALS.join("\n")); focus(); }, disabled: false },
+    { icon: GitFork, title: "Run the demo set", body: "Four goals, four forks, two on the same file; the lock lands them in order", run: () => { setText(STARTER_GOALS.join("\n")); focus(); }, disabled: false },
     { icon: Hand, title: "Hold everything for review", body: "Agents work; nothing merges until you approve", run: () => { setMode("review"); focus(); }, disabled: false },
     { icon: Lock, title: "Open the lock", body: waiting > 0 ? `${waiting} change${waiting === 1 ? "" : "s"} waiting for you` : "See what is waiting to enter main", run: () => navigate("/map"), disabled: false },
     { icon: History, title: "Replay the last session", body: landed ? "Watch what landed and why" : "Once something has merged", run: onReplayLast, disabled: !landed },

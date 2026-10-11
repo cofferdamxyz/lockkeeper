@@ -2,8 +2,9 @@
 
 Lockkeeper lets many coding agents work on one repository at once and
 decides, change by change, what merges into `main`. `DESIGN.md` is the
-source of truth for behaviour; `README.md` for running it. Change the
-design document in the same commit as the behaviour it describes.
+source of truth for behaviour; `README.md` for running it; `DEMO.md` for
+the recorded demo. Change the design document in the same commit as the
+behaviour it describes.
 
 ## Layout
 

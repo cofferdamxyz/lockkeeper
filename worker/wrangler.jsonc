@@ -6,6 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "workers_dev": true,
+  // The public demo (DESIGN.md §13). The Cofferdam deployment gets its own hostname and Access.
+  "routes": [{ "pattern": "lockkeeper-demo.cofferdam.xyz", "custom_domain": true }],
 
   // The dashboard is a Next.js static export; the Worker answers /api first.
   "assets": {

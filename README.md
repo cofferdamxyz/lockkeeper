@@ -14,7 +14,8 @@ merges live.
 
 Built on Cloudflare Workers, Artifacts, Containers, Workers AI, Vectorize,
 D1, Queues, Workflows, AI Gateway and Workers Builds. `DESIGN.md` explains
-how it works. MIT licensed; see `LICENSE`.
+how it works; `DEMO.md` is the runbook for the recorded demo. MIT
+licensed; see `LICENSE`.
 
 ## Run it
 
