@@ -232,7 +232,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     if (!this.#container.running) {
       this.ctx.storage.kv.delete("task");
       if (task.kind === "bootstrap") await this.#setSetting("bootstrap_status", "failed: container stopped during install");
-      else await this.#conclude(task, { state: "lost" });
+      else await this.#afterAgent(task, { state: "lost" });
       return;
     }
     const exit = await this.#readOptional(EXIT_CODE_PATH);
