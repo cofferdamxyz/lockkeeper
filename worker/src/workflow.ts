@@ -5,6 +5,7 @@ import { grantRepoToken } from "./artifacts";
 import { buildMergeRequest, type Candidate, type MergeDecision, parseMergeDecision, type RecentMerge, runClef } from "./clef";
 import { acquireLease, getProject, getTask, listTasks, newId, releaseLease, type TaskRow, updateTask } from "./db";
 import type { LockkeeperEnv } from "./env";
+import { notify } from "./live";
 import { indexProject } from "./repomap";
 import { markMerged, projectConfig, restartTask, triggerMerge } from "./tasks";
 import { cosine, getVectors, jaccard, taskVectorId } from "./vectors";
@@ -138,7 +139,9 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
       console.error("clef failed", error);
     }
     decision = parseMergeDecision(raw, candidates.map((c) => c.id));
-    const nextId = decision.next ?? slice[0].id;
+    // A pinned order set from the dashboard wins over Clef's choice; Clef still scores the change.
+    const pinned = slice.filter((t) => t.lock_order !== null).sort((a, b) => (a.lock_order ?? 0) - (b.lock_order ?? 0))[0];
+    const nextId = pinned?.id ?? decision.next ?? slice[0].id;
     await env.DB.prepare(
       "INSERT INTO decisions (id, project, candidates_json, request_json, response_json, chosen, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -152,6 +155,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
   }
 
   await updateTask(env.DB, chosen.id, { status: "merging" });
+  await notify(env, project, { type: "task", task: chosen.id, status: "merging" });
   const sandboxName = `merge-${project}`;
   const stub = env.SANDBOX.getByName(sandboxName);
   await grantRepoToken(env, sandboxName, projectRow.repo, "write", 900);
@@ -176,6 +180,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
     )
       .bind(chosen.id, project, decisionId, why)
       .run();
+    await notify(env, project, { type: "merge", task: chosen.id, mode: "error" });
     return { kind: "continue" };
   }
 
@@ -197,6 +202,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
       maxMinutes: 15,
       gateway: { accountId: env.AI_GATEWAY_ACCOUNT_ID, gatewayId: env.AI_GATEWAY_ID },
     });
+    await notify(env, project, { type: "merge", task: chosen.id, mode: "conflict" });
     return { kind: "resolving", taskId: chosen.id };
   }
 
@@ -208,6 +214,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
     )
       .bind(chosen.id, project, decisionId, attempt.mainBefore, attempt.output.slice(-4000))
       .run();
+    await notify(env, project, { type: "merge", task: chosen.id, mode: "needs_review" });
     return { kind: "continue" };
   }
 
@@ -224,6 +231,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
     )
       .bind(chosen.id, project, decisionId, attempt.mainBefore, why)
       .run();
+    await notify(env, project, { type: "merge", task: chosen.id, mode: "needs_review" });
     return { kind: "continue" };
   }
 
@@ -250,6 +258,7 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
   } catch (e) {
     console.warn("re-index after merge failed", String(e));
   }
+  await notify(env, project, { type: "merge", task: chosen.id, mode: approved.length > 0 ? "approved" : "unattended" });
   return { kind: "continue" };
 }
 
@@ -275,6 +284,7 @@ export async function pollResolve(env: LockkeeperEnv, project: string, taskId: s
     await env.DB.prepare("UPDATE merges SET resolved_by = 'agent', output = ? WHERE task_id = ? AND mode = 'conflict' AND resolved_by IS NULL")
       .bind(`resolved by agent; tests green at ${status.mergeSha}`, taskId)
       .run();
+    await notify(env, project, { type: "task", task: taskId, status: "ready" });
     return { kind: "done" };
   }
   const reason = status.state === "succeeded" ? "resolver finished but tests failed" : status.state === "failed" ? status.error : "no resolver run";
@@ -287,6 +297,7 @@ export async function pollResolve(env: LockkeeperEnv, project: string, taskId: s
     return false;
   });
   if (!restarted) await updateTask(env.DB, taskId, { status: "blocked", error: `${reason}; no restarts left` });
+  await notify(env, project, { type: "task", task: taskId, status: restarted ? "queued" : "blocked" });
   return { kind: "done" };
 }
 
@@ -294,4 +305,5 @@ export async function giveUpResolve(env: LockkeeperEnv, project: string, taskId:
   const stub = env.SANDBOX.getByName(`merge-${project}`);
   await stub.abortMerge();
   await updateTask(env.DB, taskId, { status: "blocked", error: "resolver did not finish in time" });
+  await notify(env, project, { type: "task", task: taskId, status: "blocked" });
 }

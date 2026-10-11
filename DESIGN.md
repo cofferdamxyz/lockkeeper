@@ -251,8 +251,20 @@ therefore decided one merge at a time, by Clef, never by arrival order.
 Lockkeeper's user-facing shape is the one GitHub's coding agent made
 familiar: hand over a task, an agent works it in isolation, you watch,
 review and merge. The difference is that all of it runs on Artifacts, and
-that watching is the point: the dashboard is a live map of the work, not a
-list of pull requests.
+that watching is the point: the primary surface is a map of the repository
+with the work on it, not a list of pull requests.
+
+**Why a map.** GitHub's primary surface is the pull request list because
+its users read every change. With a fork per task and agents producing
+commits faster than anyone reads them, the unit of attention has to move
+from the change to the region of code, and to the lock that orders what
+lands. The map answers the questions a list cannot answer at a glance:
+where work is happening and by whom, which two agents are about to
+collide, what landed in the last hour and in what order, which parts of
+the code are hot. One rule decides what goes on it: every element is
+either an answer to one of those questions, backed by data the Worker
+holds, or a control that changes what Lockkeeper or an agent does.
+Anything else was cut.
 
 **Shape.** The layout follows the coding-agent apps people already use: a
 sidebar with the project and its sessions, a home screen whose centre is
@@ -262,50 +274,68 @@ agent's stream beside map, diff and decision tabs, a work list, and the
 Map view as the live visualisation of what is happening in Artifacts.
 
 **Stack.** Next.js static export served as the Worker's assets, set in
-Inter. three.js through React Three Fiber draws the map as a camera scene.
-shadcn/ui (Tailwind 4) is the chrome: everything you read or press. Motion
-moves things between the two. Dark by default on a neutral scale with one
-accent, blue, reserved for live agents, commits, the gate and the moment a
-merge lands; a light scheme is a toggle.
+Inter. three.js through React Three Fiber draws the map as a camera scene
+in the language of Alex Harri's *Planes*: a near-black ground grid tinted
+blue, thin lines, glassy plates, phong spheres, a tilted camera that
+slowly orbits until you take it. shadcn/ui (Tailwind 4) is the chrome.
+Dark by default; a light scheme is a toggle. Colour has one grammar: hue
+means directory, the saturated accents mean agents, red and amber mean
+status, and blue is reserved for the lock, the now ring and a merge a
+person approved.
 
-**The map (three.js).** A camera scene in the language of Alex Harri's
-*Planes*: a near-black ground grid tinted blue, thin lines, phong spheres,
-a tilted camera that slowly orbits until you take it. Every point is
-clickable: a file opens its content with the commits and agents that
-touched it, a commit opens its message, author, files and the session
-that produced it, an agent opens a link to its session.
+**The map: the strata city.** The repository is the floor, time rises
+above it, and `main` is the column at the lock.
 
-- **`main` is the innermost ring, at the origin.** Its commits are beads
-  on the ring. Angle is time: the oldest moment sits at the start of a
-  300° arc, now sits at its end, and the gap marks the present, so a
-  radial line is one moment across the whole history.
-- **Every branch is an arc on its own orbital plane.** A task's fork
-  leaves `main` along the node line at its base commit, climbs to its
-  inclination a quarter turn later and comes back down, carrying its
-  commits as beads along the arc and folding back with a spoke to the
-  merge bead on `main`. Radius is the lane (a merged branch frees its lane
-  for a later branch whose arc does not overlap it in time) and the
-  inclination cycles per agent through 22.5°, −45°, 67.5°, −90° and so on,
-  so concurrent agents ride visibly different planes and the picture stays
-  three-dimensional and compact however long the history gets.
-- **Agents ride the tip of a live arc**, hovering along their plane's
-  normal by the distance still to go before merging: queued far out,
-  descending while running, touching the plane when ready, then
-  travelling to the centre when the lock merges them. A change waiting
-  for review holds at its arc tip with an amber dashed spoke toward
-  `main`. A conflict paints the arc red while the resolver works. Overlap
-  between in-flight work is a line between agents.
-- **Agents commit in steps.** The prompt asks for three or four commits
-  where the goal allows (a failing test, the implementation, cleanup), so
-  a branch reads as a sequence of beads rather than one.
-- **Files have no place in this space.** Angle is time and radius is
-  branch, and a file is neither, so the map draws commits only: every bead
-  is sized by the files its commit changed, hour marks sit along `main`,
-  a live arc ends in an arrowhead, and selecting a branch numbers its
-  commits in order so it reads as A, then B, then C. Files live in the
-  panels; picking a file there lights every commit that touched it.
-- The ring spins while a merge is in progress and a ripple crosses the
-  ground when one lands. The timeline replays the rings backwards.
+- **Floor.** The repository as a radial tree. Rings are directory depth,
+  sectors are directories sized by their subtrees, blocks are files with
+  height by size and brightness by recent change. Inside a sector, files
+  that change together sit side by side (a greedy seriation over the
+  co-change counts in the indexed commits), and the test directory lands
+  beside the source directory it changes with. The floor is `main`'s
+  tree; a file a fork adds before it lands is a translucent ghost in its
+  sector, and a file a merge removed inside the window stays as a ghost.
+- **Height is time.** The window is a control (auto, 1h, 3h, 12h, 2d);
+  auto is the smallest standard window that holds every live task and the
+  last four merges. Older history sinks into the floor's brightness.
+- **Plates are commits**, laid over the files each one touched. A stack
+  over one footprint is a branch, A then B then C. Commits reach the map
+  as they happen: while an agent works, the sandbox pushes each new
+  commit to the fork on its thirty-second check and the Worker indexes it
+  from the fork (`live: true`); when the merge lands, history indexing
+  replaces those rows with the full ones. Two live agents on one file get
+  a small lateral offset so both chains stay readable. A commit that
+  spans files is linked along the rings (polar routing), never through
+  the column.
+- **The column is `main`.** A ring on it is a merge: white when Clef
+  cleared it unattended, amber when the resolver agent reconciled a
+  conflict first, blue when a person approved it. Spokes point at the
+  files that landed. Ticks mark every fifteen minutes (hourly or
+  six-hourly on long windows).
+- **The lock chamber.** The discs stacked under the now ring are the
+  changes waiting to enter `main`, in the order they will: merging now,
+  approved, pinned, then Clef's choice, then held for review. Dragging a
+  disc (or the arrows in the lock panel) pins the order; the Workflow
+  takes the pinned candidate first and still asks Clef to score it, and
+  the unattended rule still applies. "Let Clef decide" clears the pins.
+- **Beacons are agents**, hovering over the file they are on now, read
+  from the parsed activity stream: editing pulses, reading is dimmer,
+  held is amber, blocked is red. A red halo marks a file two live agents
+  are changing.
+- **Status is visible.** A branch's thread is dashed while it waits for
+  review, red when it failed or is blocked, faded when abandoned.
+- **Selection is disclosure.** At rest, live work and the last three
+  merges are lit and older strata are dim. Picking an agent, a file, a
+  commit or a merge ring lights its subgraph and dims the rest. The lock
+  panel, the session list and the scene share one selection.
+- **The now ring is the scrubber.** Drag it down the column to replay:
+  everything above it disappears and statuses replay from the history.
+  The timeline along the bottom does the same with a slider.
+- **Panels.** A file opens its content, the agents touching it, its
+  commits and an overlap warning; a commit opens its message, files and
+  session; a merge opens how it happened, Clef's gauges against the
+  thresholds, the candidates it was weighed against and what landed; a
+  task opens its files, its commits in order and its summary. A legend
+  ("How to read") sits in the corner.
 
 **The chrome (shadcn/ui).**
 
@@ -313,20 +343,22 @@ that produced it, an agent opens a link to its session.
   file. The sidebar lists the project's sessions with a status icon each.
 - A task launched in review mode never merges unattended; the mode sits
   beside the prompt, the way an agent app offers interactive and auto.
-- A fleet strip along the bottom lists every live agent as a compact row:
-  status, elapsed time, turns, cost, ticking.
-- A sheet opens on a node or a row with tabs: overview (goal, files,
-  diffstat, result), activity (the agent's parsed stream: file reads and
-  edits, commands, notes, the final summary), diff, decision (Clef's
-  answers as gauges with the threshold mark). Approve is the only accented
-  action; retry and abandon are plain.
+- A sheet opens on a node or a row with tabs: overview, activity (the
+  agent's parsed stream), diff, decision (Clef's answers as gauges with
+  the threshold mark). Approve is the only accented action.
 - Toasts announce ready, merged, conflict, needs review.
-- A timeline along the bottom carries a tick per status change, decision and
-  merge, and scrubs the run for replay.
 
-**Data.** `GET /api/state` every two seconds, `GET /api/tasks/:id/events`
-for the parsed activity, `GET /api/history` for the timeline. A
-server-sent stream is the upgrade if polling shows on camera.
+**Data.** `GET /api/state` carries the files, every commit with its
+files (added and deleted marked, `live` while it sits on a fork), the
+tasks with their pinned lock order, the merges and the decisions.
+`GET /api/tasks/:id/events` is the parsed activity, `GET /api/history`
+the timeline. Changes land by push, not polling: the page asks
+`POST /api/live/ticket` for a single-use ticket and opens a WebSocket to
+`/api/live?ticket=…`, served by a `LiveHub` Durable Object per project
+(hibernating WebSockets). The Worker broadcasts on every push, status
+change, merge and lock change; the page refetches on each message and
+keeps a slow poll as the floor. `PUT /api/projects/:id/lock` pins the
+order.
 
 ## 8. Isolation and secrets
 
@@ -484,3 +516,12 @@ for and Lockkeeper the place where it is done.
   4 GiB); five concurrent sandboxes for a few hours stay inside the
   Workers Paid allowance (375 vCPU-minutes, 25 GiB-hours a month) during
   development only barely, so idle sandboxes are destroyed promptly.
+
+
+## Change log
+
+- 2026-10-11: the map rebuilt as the strata city (decision 0011 in the
+  Cofferdam decision log): repository on the floor, time as height,
+  `main` as the column with merge rings and the lock chamber, agents as
+  beacons, live fork commits, the lock order override and the live hub.
+  Replaces the concentric rings and orbital planes.

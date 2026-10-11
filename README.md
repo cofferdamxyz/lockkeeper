@@ -71,17 +71,23 @@ load. The shape is the one coding-agent apps made familiar: a sidebar
 with the project and its sessions, a home screen with the prompt box
 (one line per agent, auto merge or hold for review), the project bar and
 an on-your-radar list, a session view with the agent's stream beside
-map, diff and decision tabs, and a work list. The Map view is the live
-visualisation of Artifacts: a three.js scene with `main` as the innermost
-ring and every branch as an arc on its own tilted orbital plane around it,
-angle as time, commits as beads sized by what they changed, spokes where a
-branch leaves and rejoins `main`, hour marks, and agents riding the tip of
-their live arc. Files stay in the panels. Click a bead or an agent to open the
-commit or the session, pick a file from a commit to light every commit that
-touched it. The timeline at the bottom replays a run.
-⌘K opens the command palette. `GET /api/state`,
-`GET /api/tasks/:id/events` and `GET /api/history` are everything the
-page renders.
+map, diff and decision tabs, and a work list.
+
+The Map view is the strata city: the repository is the floor (rings are
+directory depth, sectors are directories, blocks are files, with files
+that change together side by side), time rises above it, and `main` is
+the column at the lock. Commits are plates over the files they touched
+and a stack is a branch; a ring on the column is a merge (white
+unattended, amber resolved by the resolver agent, blue approved by a
+person) with spokes to what landed; the discs under the now ring are the
+changes waiting to enter `main` in the order they will, and dragging one
+pins that order; agents hover over the file they are on now; a red halo
+marks a file two agents are changing. Click anything to light its
+subgraph and open its panel; drag the now ring down the column, or the
+timeline, to replay. Commits appear as agents make them, over a
+WebSocket. ⌘K opens the command palette. `GET /api/state`,
+`GET /api/tasks/:id/events`, `GET /api/history` and the live socket at
+`/api/live` are everything the page renders.
 
 To preview the built dashboard locally against a deployed Lockkeeper
 without putting the token in a browser:

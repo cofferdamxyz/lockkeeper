@@ -1,5 +1,7 @@
-import { recordEvent } from "./db";
+import { getTask, recordEvent } from "./db";
 import type { LockkeeperEnv } from "./env";
+import { indexForkCommits } from "./history";
+import { notify } from "./live";
 import { indexProject } from "./repomap";
 
 interface ArtifactsEvent {
@@ -42,6 +44,7 @@ async function handleEvent(env: LockkeeperEnv, ev: ArtifactsEvent): Promise<void
     if (ev.payload.ref === `refs/heads/${project.default_branch}`) {
       await env.DB.prepare("UPDATE projects SET head_sha = ? WHERE id = ?").bind(ev.payload.after ?? null, project.id).run();
       await indexProject(env, project.id).catch((e) => console.warn("index after push failed", String(e)));
+      await notify(env, project.id, { type: "push", ref: project.default_branch, sha: ev.payload.after ?? null });
     }
     return;
   }
@@ -50,5 +53,10 @@ async function handleEvent(env: LockkeeperEnv, ev: ArtifactsEvent): Promise<void
     await env.DB.prepare("INSERT INTO pushes (task_id, repo, ref, before_sha, after_sha, commits_json) VALUES (?, ?, ?, ?, ?, ?)")
       .bind(m[1], repo, ev.payload.ref ?? "", ev.payload.before ?? null, ev.payload.after ?? null, JSON.stringify(commits.map((c) => c.message)))
       .run();
+    const task = await getTask(env.DB, m[1]);
+    if (task) {
+      await indexForkCommits(env, task).catch((e) => console.warn("fork commit indexing failed", String(e)));
+      await notify(env, task.project, { type: "push", task: task.id, sha: ev.payload.after ?? null });
+    }
   }
 }

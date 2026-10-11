@@ -2,6 +2,8 @@ import config from "../../lockkeeper.config";
 import { deleteRepo, forkForTask, grantRepoToken, headSha } from "./artifacts";
 import { getProject, getTask, listTasks, newId, recordStatus, type TaskRow, updateTask } from "./db";
 import type { LockkeeperEnv } from "./env";
+import { deleteLiveCommits, indexForkCommits } from "./history";
+import { notify } from "./live";
 import { projectPosition } from "./repomap";
 import { embed, nearest, taskText, taskVectorId, upsertVectors } from "./vectors";
 
@@ -60,9 +62,11 @@ export async function createTasks(env: LockkeeperEnv, ctx: { waitUntil(promise: 
     await indexTask(env, projectId, { id, goal, status: "queued" }, vectors[i]);
     const row = (await getTask(env.DB, id))!;
     created.push(row);
+    await notify(env, projectId, { type: "task", task: id, status: "queued" });
     ctx.waitUntil(startTask(env, row, brief).catch(async (e) => {
       console.error("task start failed", id, String(e));
       await updateTask(env.DB, id, { status: "failed", error: `start failed: ${String(e).slice(0, 1000)}` });
+      await notify(env, projectId, { type: "task", task: id, status: "failed" });
     }));
   }
   return created;
@@ -91,6 +95,7 @@ export async function startTask(env: LockkeeperEnv, task: TaskRow, brief: string
   });
   await updateTask(env.DB, task.id, { base_sha: baseSha });
   await indexTask(env, task.project, { id: task.id, goal: task.goal, status: "running" });
+  await notify(env, task.project, { type: "task", task: task.id, status: "running" });
 }
 
 /** A task whose change a human pushes to the fork. Returns a one-hour write token for that person. */
@@ -164,6 +169,8 @@ export async function finishTask(env: LockkeeperEnv, r: FinishReport): Promise<v
       summary: r.summary ?? null,
     });
     await indexTask(env, task.project, { id: task.id, goal: task.goal, status: "failed" });
+    await indexForkCommits(env, task).catch(() => undefined);
+    await notify(env, task.project, { type: "task", task: task.id, status: "failed" });
     return;
   }
   await updateTask(env.DB, r.taskId, {
@@ -187,6 +194,8 @@ export async function finishTask(env: LockkeeperEnv, r: FinishReport): Promise<v
     commits: r.commits,
     summary: r.summary,
   });
+  await indexForkCommits(env, task).catch((e) => console.warn("fork commit indexing failed", String(e)));
+  await notify(env, task.project, { type: "task", task: task.id, status: "ready" });
   await triggerMerge(env, task.project);
 }
 
@@ -263,7 +272,7 @@ export async function indexCommits(env: LockkeeperEnv, task: TaskRow, mainBefore
 }
 
 export async function markMerged(env: LockkeeperEnv, task: TaskRow, mainAfter: string, mainBefore: string | null = null): Promise<void> {
-  await updateTask(env.DB, task.id, { status: "merged" });
+  await updateTask(env.DB, task.id, { status: "merged", lock_order: null });
   void mainBefore; // commits are placed by indexProject, which follows every merge
   await indexTask(env, task.project, {
     id: task.id,
@@ -283,6 +292,7 @@ export async function markMerged(env: LockkeeperEnv, task: TaskRow, mainAfter: s
     }
   }
   await env.DB.prepare("DELETE FROM tokens WHERE sandbox = ?").bind(`agent-${task.id}`).run();
+  await notify(env, task.project, { type: "task", task: task.id, status: "merged" });
 }
 
 /** A blocked task restarts once from a fresh fork of the new main, with a brief that says what merged. */
@@ -290,6 +300,7 @@ export async function restartTask(env: LockkeeperEnv, task: TaskRow): Promise<bo
   if (task.restarts >= 1) return false;
   const project = (await getProject(env.DB, task.project))!;
   if (task.fork) await deleteRepo(env, task.fork).catch(() => undefined);
+  await deleteLiveCommits(env, task.project, task.id);
   const head = await headSha(env, project.repo, "main");
   const vectors = await embed(env, [task.goal]);
   const brief = await buildBrief(env, task.project, task.goal, vectors[0], task.id);
@@ -307,7 +318,9 @@ export async function restartTask(env: LockkeeperEnv, task: TaskRow): Promise<bo
     tests_ok: null,
     error: null,
     resolved: 0,
+    lock_order: null,
   });
+  await notify(env, task.project, { type: "task", task: task.id, status: "queued" });
   const fresh = (await getTask(env.DB, task.id))!;
   await startTask(env, fresh, fullBrief);
   return true;

@@ -44,11 +44,15 @@
     { "binding": "MERGE_WORKFLOW", "name": "lockkeeper-merge", "class_name": "MergeWorkflow" }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "SANDBOX", "class_name": "AgentSandbox" }]
+    "bindings": [
+      { "name": "SANDBOX", "class_name": "AgentSandbox" },
+      { "name": "LIVE", "class_name": "LiveHub" }
+    ]
   },
   // Managed image (cloudflare/debian-trixie) plus a bootstrap snapshot: no Docker needed.
   "containers": [{ "class_name": "AgentSandbox", "scheduling_policy": "durable_object" }],
   "exports": {
-    "AgentSandbox": { "type": "durable-object", "storage": "sqlite" }
+    "AgentSandbox": { "type": "durable-object", "storage": "sqlite" },
+    "LiveHub": { "type": "durable-object", "storage": "sqlite" }
   }
 }

@@ -7,6 +7,8 @@
 //
 // The token file is either "TOKEN=value" lines (the first *TOKEN= line wins) or the bare token.
 import { createServer } from "node:http";
+import { connect as netConnect } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +31,7 @@ const token = (line ? line.split("=").slice(1).join("=") : raw).trim();
 const root = join(dirname(fileURLToPath(import.meta.url)), "out");
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".txt": "text/plain", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${port}`);
   if (url.pathname.startsWith("/api/") || url.pathname === "/health") {
     const body = req.method === "GET" || req.method === "HEAD" ? undefined : await new Promise((resolve) => {
@@ -54,4 +56,22 @@ createServer(async (req, res) => {
   if (!existsSync(file)) file = join(root, "index.html");
   res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" });
   res.end(readFileSync(file));
-}).listen(port, () => console.log(`dashboard preview on http://localhost:${port} → ${upstream}`));
+});
+
+// The live feed is a WebSocket; pipe the upgrade to the Worker as-is (the ticket in the URL is its auth).
+const up = new URL(upstream);
+server.on("upgrade", (req, socket, head) => {
+  const tls = up.protocol === "https:";
+  const conn = (tls ? tlsConnect : netConnect)({ host: up.hostname, port: Number(up.port) || (tls ? 443 : 80), servername: up.hostname });
+  conn.once(tls ? "secureConnect" : "connect", () => {
+    const headers = { ...req.headers, host: up.host };
+    const lines = [`${req.method} ${req.url} HTTP/1.1`, ...Object.entries(headers).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`), "", ""];
+    conn.write(lines.join("\r\n"));
+    if (head.length) conn.write(head);
+    conn.pipe(socket);
+    socket.pipe(conn);
+  });
+  conn.on("error", () => socket.destroy());
+  socket.on("error", () => conn.destroy());
+});
+server.listen(port, () => console.log(`dashboard preview on http://localhost:${port} → ${upstream}`));

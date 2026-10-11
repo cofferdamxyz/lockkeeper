@@ -1,4 +1,4 @@
-import { getProject } from "./db";
+import { getProject, type TaskRow } from "./db";
 import type { LockkeeperEnv } from "./env";
 import { projectPosition } from "./repomap";
 import { type Basis, embed, project as projectVector, upsertVectors } from "./vectors";
@@ -10,8 +10,13 @@ export interface CommitMeta {
   at: string;
   parents: string[];
   files: string[];
+  /** Paths the commit created or removed, when known. */
+  added?: string[];
+  deleted?: string[];
   task: string | null;
   merge: boolean;
+  /** True while the commit sits only on a task's fork; history re-indexes it once the merge lands. */
+  live?: boolean;
 }
 
 const SKIP = /(^|\/)(node_modules|dist|out|\.git|\.wrangler|coverage)(\/|$)/;
@@ -35,18 +40,34 @@ async function flatten(repo: ArtifactsRepo, treeHash: string, cap = 2000): Promi
   return out;
 }
 
-/** Paths whose blob changed between a commit and its first parent. */
-export async function changedFiles(repo: ArtifactsRepo, commit: ArtifactsCommitMetadata): Promise<string[]> {
+export interface ChangedFile {
+  path: string;
+  status: "A" | "M" | "D";
+}
+
+/** Paths whose blob changed between a commit and its first parent, each marked added, modified or deleted. */
+export async function changedFiles(repo: ArtifactsRepo, commit: ArtifactsCommitMetadata): Promise<ChangedFile[]> {
   const after = await flatten(repo, commit.treeHash);
   const parentHash = commit.parents[0];
-  if (!parentHash) return [...after.keys()].slice(0, 60);
-  const parent = await repo.readCommit(parentHash);
-  if (!parent) return [...after.keys()].slice(0, 60);
+  const parent = parentHash ? await repo.readCommit(parentHash) : null;
+  if (!parent) return [...after.keys()].slice(0, 60).map((path) => ({ path, status: "A" as const }));
   const before = await flatten(repo, parent.treeHash);
-  const changed: string[] = [];
-  for (const [path, hash] of after) if (before.get(path) !== hash) changed.push(path);
-  for (const path of before.keys()) if (!after.has(path)) changed.push(path);
+  const changed: ChangedFile[] = [];
+  for (const [path, hash] of after) {
+    const was = before.get(path);
+    if (was === undefined) changed.push({ path, status: "A" });
+    else if (was !== hash) changed.push({ path, status: "M" });
+  }
+  for (const path of before.keys()) if (!after.has(path)) changed.push({ path, status: "D" });
   return changed.slice(0, 60);
+}
+
+export function splitChanges(changes: ChangedFile[]): { files: string[]; added: string[]; deleted: string[] } {
+  return {
+    files: changes.map((c) => c.path),
+    added: changes.filter((c) => c.status === "A").map((c) => c.path),
+    deleted: changes.filter((c) => c.status === "D").map((c) => c.path),
+  };
 }
 
 function taskFromTrailers(message: string): string | null {
@@ -78,10 +99,15 @@ export async function indexCommitHistory(env: LockkeeperEnv, projectId: string, 
     log.push(c);
     for (const p of c.parents) if (!seen.has(p)) queue.push(p);
   }
-  // Rows written before commits carried a timestamp are indexed again.
+  // Rows written before commits carried a timestamp, and rows indexed from a fork while the
+  // task was live, are indexed again with the full metadata.
   const existing = new Set(
     (await env.DB.prepare("SELECT id, meta_json FROM positions WHERE project = ? AND kind = 'commit'").bind(projectId).all<{ id: string; meta_json: string | null }>()).results
-      .filter((r) => r.meta_json && (JSON.parse(r.meta_json) as { at?: string }).at)
+      .filter((r) => {
+        if (!r.meta_json) return false;
+        const m = JSON.parse(r.meta_json) as { at?: string; live?: boolean };
+        return Boolean(m.at) && !m.live;
+      })
       .map((r) => r.id),
   );
   const fresh = log.filter((c) => !existing.has(`commit:${projectId}:${c.hash}`));
@@ -94,7 +120,7 @@ export async function indexCommitHistory(env: LockkeeperEnv, projectId: string, 
   );
   const metas: CommitMeta[] = [];
   for (const c of fresh) {
-    const files = await changedFiles(repo, c);
+    const { files, added, deleted } = splitChanges(await changedFiles(repo, c));
     metas.push({
       sha: c.hash,
       message: c.message,
@@ -102,6 +128,8 @@ export async function indexCommitHistory(env: LockkeeperEnv, projectId: string, 
       at: new Date(c.committedAt * 1000).toISOString(),
       parents: c.parents,
       files,
+      added,
+      deleted,
       task: taskFromTrailers(c.message) ?? tasksByHead.get(c.hash) ?? null,
       merge: c.parents.length > 1,
     });
@@ -148,7 +176,7 @@ export async function commitDetail(env: LockkeeperEnv, projectId: string, sha: s
   if (!c) return null;
   const row = await env.DB.prepare("SELECT x, y, z, meta_json FROM positions WHERE id = ?").bind(`commit:${projectId}:${sha}`).first<{ x: number; y: number; z: number; meta_json: string | null }>();
   const meta = row?.meta_json ? (JSON.parse(row.meta_json) as Partial<CommitMeta>) : {};
-  const files = meta.files ?? (await changedFiles(repo, c));
+  const files = meta.files ?? splitChanges(await changedFiles(repo, c)).files;
   return {
     sha,
     message: c.message.split("\n")[0],
@@ -180,4 +208,66 @@ export async function fileDetail(env: LockkeeperEnv, projectId: string, path: st
     .slice(0, 30)
     .map((m) => ({ sha: m.sha, message: m.message.split("\n")[0], at: m.at, task: m.task }));
   return { path, text, bytes: blob.size, truncated: blob.size > cap, commits };
+}
+
+/**
+ * Commits a task has pushed to its fork and not yet merged. They carry `live: true` and no
+ * vector; when the merge lands, `indexCommitHistory` replaces them with the full rows.
+ */
+export async function indexForkCommits(env: LockkeeperEnv, task: Pick<TaskRow, "id" | "project" | "fork" | "base_sha" | "created_at">): Promise<number> {
+  if (!task.fork) return 0;
+  const project = await getProject(env.DB, task.project);
+  if (!project) return 0;
+  let log: ArtifactsCommitMetadata[];
+  try {
+    const repo = await env.ARTIFACTS.get(task.fork);
+    log = await repo.log({ ref: project.default_branch, limit: 40 });
+  } catch {
+    return 0; // the fork is gone
+  }
+  const createdAt = new Date(task.created_at).getTime();
+  const fresh: ArtifactsCommitMetadata[] = [];
+  for (const c of log) {
+    if (c.hash === task.base_sha || c.committedAt * 1000 < createdAt - 120_000) break;
+    fresh.push(c);
+  }
+  if (fresh.length === 0) return 0;
+  const ids = fresh.map((c) => `commit:${task.project}:${c.hash}`);
+  const known = new Set(
+    (await env.DB.prepare(`SELECT id FROM positions WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all<{ id: string }>()).results.map((r) => r.id),
+  );
+  const repo = await env.ARTIFACTS.get(task.fork);
+  let indexed = 0;
+  for (let i = 0; i < fresh.length; i++) {
+    if (known.has(ids[i])) continue;
+    const c = fresh[i];
+    const { files, added, deleted } = splitChanges(await changedFiles(repo, c));
+    const meta: CommitMeta = {
+      sha: c.hash,
+      message: c.message,
+      author: c.author?.name ?? null,
+      at: new Date(c.committedAt * 1000).toISOString(),
+      parents: c.parents,
+      files,
+      added,
+      deleted,
+      task: task.id,
+      merge: c.parents.length > 1,
+      live: true,
+    };
+    await env.DB.prepare("INSERT INTO positions (id, project, kind, label, x, y, z, meta_json) VALUES (?, ?, 'commit', ?, 0, 0, 0, ?) ON CONFLICT(id) DO NOTHING")
+      .bind(ids[i], task.project, c.message.split("\n")[0].slice(0, 120), JSON.stringify(meta))
+      .run();
+    indexed++;
+  }
+  return indexed;
+}
+
+/** Forget a task's fork-only commits (the task was abandoned or restarts from a fresh fork). */
+export async function deleteLiveCommits(env: LockkeeperEnv, projectId: string, taskId: string): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM positions WHERE project = ? AND kind = 'commit' AND json_extract(meta_json, '$.live') = 1 AND json_extract(meta_json, '$.task') = ?",
+  )
+    .bind(projectId, taskId)
+    .run();
 }

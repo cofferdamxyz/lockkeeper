@@ -20,6 +20,8 @@ export interface TaskView {
   restarts: number;
   resolved: boolean;
   hold: boolean;
+  /** Pinned place in the lock queue; null lets Clef choose. */
+  lockOrder: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -31,7 +33,7 @@ export interface PositionView {
   x: number;
   y: number;
   z: number;
-  meta: { dir?: string; bytes?: number; task?: string | null; status?: string; sha?: string; merge?: boolean; author?: string | null; files?: string[]; at?: string; message?: string } | null;
+  meta: { dir?: string; bytes?: number; task?: string | null; status?: string; sha?: string; merge?: boolean; author?: string | null; files?: string[]; added?: string[]; deleted?: string[]; live?: boolean; at?: string; message?: string } | null;
 }
 
 export interface EdgeView { a: string; b: string; cosine: number; paths: number }
@@ -170,6 +172,70 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return (await res.json()) as T;
+}
+
+/** Pin the lock order; an empty list hands the choice back to Clef. */
+export async function setLockOrder(project: string, order: string[]): Promise<void> {
+  await api(`/api/projects/${encodeURIComponent(project)}/lock`, { method: "PUT", body: JSON.stringify({ order }) });
+}
+
+export type LiveMessage = { type: "task" | "push" | "merge" | "lock" | "index"; project: string; at: string; task?: string; status?: string; mode?: string };
+
+/**
+ * Open the live feed for a project: a ticket from the Worker, then a WebSocket with it.
+ * Reconnects with backoff; the caller keeps a slow poll as the fallback. Returns a stop function.
+ */
+export function connectLive(project: string, onMessage: (m: LiveMessage) => void, onState?: (open: boolean) => void): () => void {
+  let stopped = false;
+  let socket: WebSocket | null = null;
+  let attempt = 0;
+  let timer: number | null = null;
+  const schedule = () => {
+    if (stopped) return;
+    const delay = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
+    attempt++;
+    timer = window.setTimeout(() => void open(), delay);
+  };
+  const open = async () => {
+    if (stopped) return;
+    let path: string;
+    try {
+      const t = await api<{ path: string }>(`/api/live/ticket?project=${encodeURIComponent(project)}`, { method: "POST" });
+      path = t.path;
+    } catch {
+      schedule();
+      return;
+    }
+    const url = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${path}`;
+    const ws = new WebSocket(url);
+    socket = ws;
+    let ping: number | null = null;
+    ws.onopen = () => {
+      attempt = 0;
+      onState?.(true);
+      ping = window.setInterval(() => ws.readyState === WebSocket.OPEN && ws.send("ping"), 25_000);
+    };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data !== "string" || ev.data === "pong") return;
+      try {
+        onMessage(JSON.parse(ev.data) as LiveMessage);
+      } catch {
+        // not ours
+      }
+    };
+    ws.onclose = () => {
+      if (ping !== null) window.clearInterval(ping);
+      onState?.(false);
+      schedule();
+    };
+    ws.onerror = () => ws.close();
+  };
+  void open();
+  return () => {
+    stopped = true;
+    if (timer !== null) window.clearTimeout(timer);
+    socket?.close();
+  };
 }
 
 export async function apiText(path: string): Promise<string> {

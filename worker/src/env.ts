@@ -1,3 +1,4 @@
+import type { LiveHub } from "./live";
 import type { AgentSandbox } from "./sandbox";
 import type { MergeWorkflow } from "./workflow";
 
@@ -14,6 +15,8 @@ export interface LockkeeperEnv {
   VECTORIZE?: VectorizeIndex;
   DB: D1Database;
   SANDBOX: DurableObjectNamespace<AgentSandbox>;
+  /** Optional until the hub is deployed: without it, dashboards poll. */
+  LIVE?: DurableObjectNamespace<LiveHub>;
   MERGE_WORKFLOW: Workflow;
   ASSETS: Fetcher;
 

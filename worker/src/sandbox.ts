@@ -2,6 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 
 import type { LockkeeperEnv } from "./env";
 import type { Outbound } from "./outbound";
+import { getTask } from "./db";
+import { indexForkCommits } from "./history";
+import { notify } from "./live";
 import { agentPrompt, resolverPrompt } from "./prompt";
 import { finishTask } from "./tasks";
 
@@ -251,6 +254,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
         else await this.#afterAgent(task, { state: "timeout" });
         return;
       }
+      if (task.kind === "agent" && task.phase === "agent") await this.#pushProgress(task);
       await this.ctx.storage.setAlarm(Date.now() + CHECK_INTERVAL_MS);
       return;
     }
@@ -264,6 +268,22 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
       return;
     }
     await this.#afterAgent(task, { state: "exited", exitCode: Number.parseInt(exit, 10) });
+  }
+
+  /** While the agent works, each new commit reaches the fork at once, so the dashboard shows the branch growing. */
+  async #pushProgress(task: StoredTask): Promise<void> {
+    try {
+      const ahead = (await this.#run(["git", "rev-list", "--count", "origin/main..HEAD"], REPO_DIR, {})).stdout.trim();
+      if (!ahead || ahead === "0") return;
+      const push = await this.#run(["git", "push", "-q", "origin", "HEAD:main"], REPO_DIR, TRUST_ENV);
+      if (push.exitCode !== 0) return;
+      const row = await getTask(this.env.DB, task.taskId);
+      if (!row) return;
+      await indexForkCommits(this.env, row);
+      await notify(this.env, task.project, { type: "push", task: task.taskId });
+    } catch (e) {
+      console.warn("progress push failed", task.taskId, String(e));
+    }
   }
 
   async readTail(lines = 60): Promise<string> {

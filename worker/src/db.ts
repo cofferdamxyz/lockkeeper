@@ -34,6 +34,8 @@ export interface TaskRow {
   restarts: number;
   resolved: number;
   hold: number;
+  /** Pinned position in the lock queue; NULL lets Clef choose. */
+  lock_order: number | null;
   created_at: string;
   updated_at: string;
 }

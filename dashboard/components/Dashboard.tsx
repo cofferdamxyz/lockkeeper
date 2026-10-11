@@ -10,10 +10,11 @@ import { Sidebar } from "@/components/Sidebar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Home } from "@/components/views/Home";
-import { MapView } from "@/components/views/MapView";
+import { MapView, type WindowChoice } from "@/components/views/MapView";
 import { TaskView } from "@/components/views/TaskView";
 import { TasksView } from "@/components/views/TasksView";
-import { type ActivityEvent, api, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setToken, type StateView, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
+import { type ActivityEvent, api, connectLive, getToken, type HistoryItem, navigate, projectFromUrl, replayState, setLockOrder, setToken, type StateView, type TaskStatus, type TaskView as TaskRow } from "@/lib/api";
+import { pickWindow } from "@/lib/city";
 
 const ANNOUNCE: Partial<Record<TaskStatus, (t: TaskRow) => void>> = {
   ready: (t) => toast(`${t.id.slice(-4)} is ready`, { description: t.goal.slice(0, 80) }),
@@ -56,6 +57,8 @@ export default function Dashboard() {
     return () => window.removeEventListener("resize", apply);
   }, []);
   const [busy, setBusy] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [windowChoice, setWindowChoice] = useState<WindowChoice>("auto");
   const [hasToken, setHasToken] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [now, setNow] = useState(() => Date.now());
@@ -119,17 +122,37 @@ export default function Dashboard() {
     setActivity((a) => ({ ...a, ...Object.fromEntries(entries.filter((e): e is readonly [string, ActivityEvent[]] => e !== null)) }));
   }, [state, taskId, selected]);
 
+  // Polling is the floor; the live feed below makes changes land the moment they happen.
   useEffect(() => {
     if (!hasToken) return;
     void refresh();
     void refreshHistory();
-    const a = window.setInterval(() => void refresh(), 2500);
-    const b = window.setInterval(() => void refreshHistory(), 10_000);
+    const a = window.setInterval(() => void refresh(), liveOpen ? 10_000 : 2500);
+    const b = window.setInterval(() => void refreshHistory(), liveOpen ? 30_000 : 10_000);
     return () => {
       window.clearInterval(a);
       window.clearInterval(b);
     };
-  }, [hasToken, refresh, refreshHistory]);
+  }, [hasToken, liveOpen, refresh, refreshHistory]);
+  useEffect(() => {
+    if (!hasToken) return;
+    let timer: number | null = null;
+    const stop = connectLive(
+      project,
+      (m) => {
+        if (timer !== null) window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          void refresh();
+          if (m.type === "task" || m.type === "merge") void refreshHistory();
+        }, 150);
+      },
+      setLiveOpen,
+    );
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      stop();
+    };
+  }, [hasToken, project, refresh, refreshHistory]);
   useEffect(() => {
     if (!hasToken) return;
     void refreshActivity();
@@ -149,6 +172,7 @@ export default function Dashboard() {
   }, []);
 
   const shown = useMemo(() => (state && replayAt !== null ? replayState(state, history, replayAt) : state), [state, history, replayAt]);
+  const windowMs = useMemo(() => (windowChoice === "auto" ? (state ? pickWindow(state, now) : 60 * 60_000) : windowChoice), [windowChoice, state, now]);
   const files = useMemo(() => state?.positions.filter((p) => p.kind === "file") ?? [], [state]);
   const timeStart = useMemo(() => {
     const first = history[0]?.at ?? state?.tasks[0]?.createdAt;
@@ -168,6 +192,15 @@ export default function Dashboard() {
       toast.error("Launch failed", { description: String(e).slice(0, 160) });
     } finally {
       setBusy(false);
+    }
+  }
+  async function reorder(order: string[]) {
+    try {
+      await setLockOrder(project, order);
+      toast(order.length ? "Lock order pinned" : "Clef decides the order again");
+      await refresh();
+    } catch (e) {
+      toast.error("Could not change the lock order", { description: String(e).slice(0, 160) });
     }
   }
   async function act(task: TaskRow, action: "approve" | "retry" | "abandon") {
@@ -220,7 +253,7 @@ export default function Dashboard() {
         {route === "/" && <Home state={state} projectId={project} now={now} busy={busy} onLaunch={launch} onAddProject={() => setQuick("project")} onQuick={setQuick} />}
         {route === "/tasks" && <TasksView tasks={state?.tasks ?? []} now={now} />}
         {route === "/map" && (
-          <MapView state={state} shown={shown} history={history} activity={activity} selected={selected} hovered={hovered} onSelect={setSelected} onHover={setHovered} replayAt={replayAt} onScrub={setReplayAt} timeStart={timeStart} now={now} dark={dark} />
+          <MapView state={state} shown={shown} history={history} activity={activity} selected={selected} hovered={hovered} onSelect={setSelected} onHover={setHovered} replayAt={replayAt} onScrub={setReplayAt} timeStart={timeStart} now={now} dark={dark} windowChoice={windowChoice} windowMs={windowMs} onWindow={setWindowChoice} onReorder={(o) => void reorder(o)} liveOpen={liveOpen} />
         )}
         {taskId && current && <TaskView task={current} state={state} activity={activity[current.id] ?? []} now={now} busy={busy} dark={dark} onAction={(t, a) => void act(t, a)} />}
         {taskId && !current && state && <div className="h-full grid place-items-center text-sm text-muted-foreground">No task {taskId}.</div>}

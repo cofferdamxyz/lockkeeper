@@ -6,13 +6,15 @@ import config from "../../lockkeeper.config";
 import { deleteRepo } from "./artifacts";
 import { getProject, getSetting, getTask, listTasks, setSetting, updateTask, upsertProject } from "./db";
 import type { LockkeeperEnv } from "./env";
-import { commitDetail, fileDetail } from "./history";
+import { commitDetail, deleteLiveCommits, fileDetail } from "./history";
+import { notify } from "./live";
 import { handleQueue } from "./queue";
 import { indexProject } from "./repomap";
 import { SNAPSHOT_SETTING } from "./sandbox";
 import { getState } from "./state";
 import { createManualTask, createTasks, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
 
+export { LiveHub } from "./live";
 export { AgentSandbox } from "./sandbox";
 export { MergeWorkflow } from "./workflow";
 export { Outbound } from "./outbound";
@@ -28,6 +30,19 @@ app.onError((err, c) => {
 
 app.get("/health", (c) => c.json({ ok: true, projects: config.projects.map((p) => p.id) }));
 
+/**
+ * Live updates. A WebSocket cannot carry the bearer header, so the dashboard asks for a
+ * single-use ticket (below, authenticated) and connects here with it; the hub checks it.
+ */
+app.get("/api/live", async (c) => {
+  const project = c.req.query("project") ?? config.projects[0].id;
+  const ticket = c.req.query("ticket") ?? "";
+  if (!c.env.LIVE) return c.json({ error: "live hub is not deployed" }, 503);
+  if (!ticket) return c.json({ error: "ticket required" }, 401);
+  const stub = c.env.LIVE.getByName(`live-${project}`);
+  return stub.fetch(new Request(`https://live/connect?ticket=${encodeURIComponent(ticket)}`, c.req.raw));
+});
+
 // Bearer token for everything under /api. Access replaces this for an organisation's deployment.
 app.use("/api/*", async (c, next) => {
   const header = c.req.header("authorization") ?? "";
@@ -36,6 +51,29 @@ app.use("/api/*", async (c, next) => {
     return c.json({ error: "unauthorized" }, 401);
   }
   await next();
+});
+
+app.post("/api/live/ticket", async (c) => {
+  const project = c.req.query("project") ?? config.projects[0].id;
+  if (!c.env.LIVE) return c.json({ error: "live hub is not deployed" }, 503);
+  const ticket = await c.env.LIVE.getByName(`live-${project}`).ticket();
+  return c.json({ ticket, path: `/api/live?project=${encodeURIComponent(project)}&ticket=${encodeURIComponent(ticket)}` });
+});
+
+/**
+ * Pin the order in which ready changes enter the lock. Clef still scores each change and the
+ * unattended rule still applies; only the choice of what goes first is overridden.
+ */
+app.put("/api/projects/:id/lock", async (c) => {
+  const pc = projectConfig(c.req.param("id"));
+  const body = (await c.req.json().catch(() => ({}))) as { order?: string[] };
+  const order = Array.isArray(body.order) ? body.order.filter((x) => typeof x === "string").slice(0, 50) : [];
+  await c.env.DB.prepare("UPDATE tasks SET lock_order = NULL WHERE project = ?").bind(pc.id).run();
+  for (let i = 0; i < order.length; i++) {
+    await c.env.DB.prepare("UPDATE tasks SET lock_order = ? WHERE id = ? AND project = ?").bind(i + 1, order[i], pc.id).run();
+  }
+  await notify(c.env, pc.id, { type: "lock" });
+  return c.json({ project: pc.id, order });
 });
 
 app.get("/api/projects", async (c) => {
@@ -197,6 +235,7 @@ app.post("/api/tasks/:id/approve", async (c) => {
   if (!task) return c.json({ error: "not found" }, 404);
   if (task.status !== "needs_review") return c.json({ error: `task is ${task.status}` }, 409);
   await updateTask(c.env.DB, task.id, { status: "approved", error: null });
+  await notify(c.env, task.project, { type: "task", task: task.id, status: "approved" });
   await triggerMerge(c.env, task.project);
   return c.json({ id: task.id, status: "approved" });
 });
@@ -218,12 +257,14 @@ app.post("/api/tasks/:id/retry", async (c) => {
 app.post("/api/tasks/:id/abandon", async (c) => {
   const task = await getTask(c.env.DB, c.req.param("id"));
   if (!task) return c.json({ error: "not found" }, 404);
-  await updateTask(c.env.DB, task.id, { status: "abandoned" });
+  await updateTask(c.env.DB, task.id, { status: "abandoned", lock_order: null });
+  await notify(c.env, task.project, { type: "task", task: task.id, status: "abandoned" });
   c.executionCtx.waitUntil(
     (async () => {
       await c.env.SANDBOX.getByName(`agent-${task.id}`).destroy().catch(() => undefined);
       if (task.fork) await deleteRepo(c.env, task.fork).catch(() => undefined);
       await c.env.DB.prepare("DELETE FROM tokens WHERE sandbox = ?").bind(`agent-${task.id}`).run();
+      await deleteLiveCommits(c.env, task.project, task.id);
     })(),
   );
   return c.json({ id: task.id, status: "abandoned" });
@@ -268,6 +309,7 @@ app.post("/api/admin/tasks/:id/status", async (c) => {
   const allowed = ["ready", "needs_review", "failed", "abandoned"];
   if (!body.status || !allowed.includes(body.status)) return c.json({ error: `status must be one of ${allowed.join(", ")}` }, 400);
   await updateTask(c.env.DB, task.id, { status: body.status as "ready", error: null });
+  await notify(c.env, task.project, { type: "task", task: task.id, status: body.status });
   if (body.status === "ready") await triggerMerge(c.env, task.project);
   return c.json({ id: task.id, status: body.status });
 });

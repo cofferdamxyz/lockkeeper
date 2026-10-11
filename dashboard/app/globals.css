@@ -141,4 +141,10 @@ body { font-family: var(--font-sans); }
 .scene-dir { font-size: 11px; letter-spacing: 0.16em; font-weight: 600; opacity: 0.75; white-space: nowrap; }
 .scene-seq { font-family: ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 999px; background: color-mix(in oklab, var(--background) 80%, transparent); border: 1px solid var(--border); color: var(--foreground); }
 .scene-seq.inline { margin-right: 6px; }
-.scene-tick { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--muted-foreground); opacity: 0.8; white-space: nowrap; }
+.scene-tick { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--muted-foreground); opacity: 0.8; white-space: nowrap; transform: translate(10px, -50%); }
+.scene-tick.now { color: #3c8aff; opacity: 1; font-weight: 600; }
+.scene-tick.replay { color: #ffc857; }
+.scene-label.right { transform: translate(-100%, -50%); }
+.scene-agent { font-size: 11.5px; font-weight: 600; white-space: nowrap; background: color-mix(in oklab, var(--background) 78%, transparent); border: 1px solid var(--border); border-radius: 8px; padding: 2px 7px; transform: translate(0, -50%); }
+.scene-halo { font-size: 10px; font-weight: 600; color: #ff7a7a; white-space: nowrap; background: color-mix(in oklab, var(--background) 78%, transparent); border-radius: 6px; padding: 1px 6px; }
+.scene-main { font-size: 12px; font-weight: 600; color: var(--foreground); opacity: 0.85; }

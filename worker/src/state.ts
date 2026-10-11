@@ -30,7 +30,7 @@ export async function getState(env: LockkeeperEnv, projectId: string) {
       }>()).results
     : [];
   const decisions = project
-    ? (await env.DB.prepare("SELECT id, candidates_json, response_json, chosen, error, at FROM decisions WHERE project = ? ORDER BY at DESC LIMIT 10").bind(projectId).all<{
+    ? (await env.DB.prepare("SELECT id, candidates_json, response_json, chosen, error, at FROM decisions WHERE project = ? ORDER BY at DESC LIMIT 20").bind(projectId).all<{
         id: string;
         candidates_json: string;
         response_json: string | null;
@@ -40,7 +40,7 @@ export async function getState(env: LockkeeperEnv, projectId: string) {
       }>()).results
     : [];
   const merges = project
-    ? (await env.DB.prepare("SELECT id, task_id, decision_id, mode, main_before, main_after, conflict, resolved_by, approved_by, at FROM merges WHERE project = ? ORDER BY at DESC LIMIT 30").bind(projectId).all()).results
+    ? (await env.DB.prepare("SELECT id, task_id, decision_id, mode, main_before, main_after, conflict, resolved_by, approved_by, at FROM merges WHERE project = ? ORDER BY at DESC LIMIT 120").bind(projectId).all()).results
     : [];
 
   const inFlight = tasks.filter((t) => IN_FLIGHT.has(t.status));
@@ -89,6 +89,7 @@ export async function getState(env: LockkeeperEnv, projectId: string) {
       restarts: t.restarts,
       resolved: t.resolved === 1,
       hold: t.hold === 1,
+      lockOrder: t.lock_order,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
     })),
