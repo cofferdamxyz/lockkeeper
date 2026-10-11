@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type ActivityEvent, api, elapsed, navigate, short, type StateView, STATUS_LABEL, type TaskView as TaskRow } from "@/lib/api";
 
-const Chart = dynamic(() => import("@/components/Chart"), { ssr: false });
+const Scene = dynamic(() => import("@/components/Scene"), { ssr: false });
 
 function Gauge({ label, value, threshold, max = 1, tone = "blue" }: { label: string; value: number | null | undefined; threshold?: number; max?: number; tone?: "blue" | "amber" }) {
   const v = value == null || Number.isNaN(value) ? null : value;
@@ -108,7 +108,7 @@ export function TaskView({
               <TabsTrigger value="decision">Decision</TabsTrigger>
             </TabsList>
             <TabsContent value="map" className="flex-1 min-h-0 relative">
-              {state && <Chart state={state} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} activity={{ [task.id]: activity }} birthAt={null} dark={dark} focus={task.id} compact />}
+              {state && <Scene state={state} selected={task.id} hovered={null} onSelect={() => undefined} onHover={() => undefined} activity={{ [task.id]: activity }} dark={dark} focus={task.id} compact />}
             </TabsContent>
             <TabsContent value="diff" className="flex-1 min-h-0 overflow-auto px-4 pb-4">
               {diff === null ? <p className="text-xs text-muted-foreground">Loading…</p> : diff === "" ? <p className="text-xs text-muted-foreground">No diff yet.</p> : (
