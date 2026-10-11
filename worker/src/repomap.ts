@@ -41,7 +41,7 @@ export async function indexProject(env: LockkeeperEnv, projectId: string, opts: 
   for (let i = 0; i < stale.length; i += 40) {
     await env.DB.batch(stale.slice(i, i + 40).map((id) => env.DB.prepare("DELETE FROM positions WHERE id = ?").bind(id)));
   }
-  if (stale.length) await env.VECTORIZE.deleteByIds(stale);
+  if (stale.length && env.VECTORIZE) await env.VECTORIZE.deleteByIds(stale);
   await upsertVectors(
     env,
     files.map((f, i) => ({

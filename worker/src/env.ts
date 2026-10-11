@@ -10,7 +10,8 @@ import type { MergeWorkflow } from "./workflow";
 export interface LockkeeperEnv {
   ARTIFACTS: Artifacts;
   AI: Ai;
-  VECTORIZE: VectorizeIndex;
+  /** Optional until the index exists: without it, briefs and overlaps use the ledger only. */
+  VECTORIZE?: VectorizeIndex;
   DB: D1Database;
   SANDBOX: DurableObjectNamespace<AgentSandbox>;
   MERGE_WORKFLOW: Workflow;

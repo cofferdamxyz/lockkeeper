@@ -70,6 +70,7 @@ export async function getState(env: LockkeeperEnv, projectId: string) {
       : null,
     config: { clef: config.clef, agents: { model: config.agents.model, maxMinutes: config.agents.maxMinutes } },
     snapshot: (await getSetting(env.DB, SNAPSHOT_SETTING)) !== null,
+    index: env.VECTORIZE !== undefined,
     bootstrapStatus: await getSetting(env.DB, "bootstrap_status"),
     tasks: tasks.map((t) => ({
       id: t.id,

@@ -138,6 +138,7 @@ export async function upsertVectors(
   env: Pick<LockkeeperEnv, "VECTORIZE">,
   vectors: { id: string; values: number[]; metadata: TaskVectorMeta }[],
 ): Promise<void> {
+  if (!env.VECTORIZE) return;
   for (let i = 0; i < vectors.length; i += 100) {
     await env.VECTORIZE.upsert(vectors.slice(i, i + 100) as unknown as VectorizeVector[]);
   }
@@ -155,13 +156,14 @@ export async function nearest(
   filter: Record<string, string>,
   topK = 5,
 ): Promise<Neighbor[]> {
+  if (!env.VECTORIZE) return [];
   const res = await env.VECTORIZE.query(values, { topK, filter, returnMetadata: "all" });
   return res.matches.map((m) => ({ id: m.id, score: m.score, metadata: m.metadata as unknown as TaskVectorMeta }));
 }
 
 export async function getVectors(env: Pick<LockkeeperEnv, "VECTORIZE">, ids: string[]): Promise<Map<string, number[]>> {
   const out = new Map<string, number[]>();
-  if (ids.length === 0) return out;
+  if (ids.length === 0 || !env.VECTORIZE) return out;
   const res = await env.VECTORIZE.getByIds(ids);
   for (const v of res) out.set(v.id, Array.from(v.values as number[]));
   return out;

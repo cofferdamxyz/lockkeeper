@@ -10,3 +10,4 @@ dist/
 dashboard/.next/
 dashboard/out/
 worker/worker-configuration.d.ts
+worker/wrangler.novectorize.jsonc
