@@ -27,6 +27,9 @@ const CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1_000;
 const CHECK_INTERVAL_MS = 30 * 1_000;
 const GIT_IDENTITY = ["-c", "user.name=Lockkeeper agent", "-c", "user.email=agent@lockkeeper.invalid"];
+// Test runs leave lockfiles and build output behind; a merge must start from a clean tree.
+// node_modules is kept so each merge does not reinstall from scratch.
+const CLEAN_TREE = "git merge --abort 2>/dev/null; git reset -q --hard; git clean -fdq -e node_modules";
 
 // exec() does not inherit start() env. Every command that speaks HTTPS trusts the intercept CA.
 const TRUST_ENV: Record<string, string> = {
@@ -286,7 +289,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
       const clone = await this.#run(["git", "clone", "--", p.remote, PROJECT_DIR], WORKSPACE, TRUST_ENV);
       if (clone.exitCode !== 0) throw new Error(`project clone failed: ${clone.stderr.slice(-2000)}`);
     } else {
-      const fetch = await this.#run(["sh", "-c", "git merge --abort 2>/dev/null; git fetch origin && git checkout -q -B main origin/main"], PROJECT_DIR, TRUST_ENV);
+      const fetch = await this.#run(["sh", "-c", `${CLEAN_TREE}; git fetch origin && git checkout -q -B main origin/main && git reset -q --hard origin/main`], PROJECT_DIR, TRUST_ENV);
       if (fetch.exitCode !== 0) throw new Error(`project fetch failed: ${fetch.stderr.slice(-2000)}`);
     }
     const head = (await this.#run(["git", "rev-parse", "HEAD"], PROJECT_DIR, {})).stdout.trim();
@@ -305,7 +308,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
     await this.#run(["sh", "-c", `git remote remove ${remote} 2>/dev/null; git remote add ${remote} "$1"`, "x", p.forkRemote], PROJECT_DIR, {});
     const fetch = await this.#run(["git", "fetch", remote, "main"], PROJECT_DIR, TRUST_ENV);
     if (fetch.exitCode !== 0) throw new Error(`fork fetch failed: ${fetch.stderr.slice(-2000)}`);
-    await this.#run(["sh", "-c", "git merge --abort 2>/dev/null; git checkout -q -B merge origin/main"], PROJECT_DIR, {});
+    await this.#run(["sh", "-c", `${CLEAN_TREE}; git checkout -q -B merge origin/main && git reset -q --hard origin/main`], PROJECT_DIR, {});
     await this.#writeFile(`${TASK_DIR}/merge-message.txt`, p.message);
     const merge = await this.#run(
       ["git", ...GIT_IDENTITY, "merge", "--no-ff", "-F", `${TASK_DIR}/merge-message.txt`, `${remote}/main`],
@@ -428,7 +431,7 @@ export class AgentSandbox extends DurableObject<LockkeeperEnv> {
   }
 
   async abortMerge(): Promise<void> {
-    await this.#run(["sh", "-c", "git merge --abort 2>/dev/null; git checkout -q -B main origin/main; git branch -D merge 2>/dev/null; true"], PROJECT_DIR, {});
+    await this.#run(["sh", "-c", `${CLEAN_TREE}; git checkout -q -B main origin/main; git reset -q --hard origin/main; git branch -D merge 2>/dev/null; true`], PROJECT_DIR, {});
   }
 
   /** Mirror main to a GitHub remote over HTTPS; the gateway must allow github.com for this sandbox. */

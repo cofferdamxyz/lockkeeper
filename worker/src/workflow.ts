@@ -156,13 +156,28 @@ export async function mergeRound(env: LockkeeperEnv, project: string): Promise<R
   const stub = env.SANDBOX.getByName(sandboxName);
   await grantRepoToken(env, sandboxName, projectRow.repo, "write", 900);
   if (chosen.fork) await grantRepoToken(env, sandboxName, chosen.fork, "write", 900);
-  await stub.ensureProjectClone({ project, remote: projectRow.remote });
-  const attempt = await stub.mergeTask({
-    taskId: chosen.id,
-    forkRemote: chosen.fork_remote!,
-    testCommand: pc.test,
-    message: mergeMessage(chosen, decisionId),
-  });
+  let attempt: Awaited<ReturnType<typeof stub.mergeTask>>;
+  try {
+    await stub.ensureProjectClone({ project, remote: projectRow.remote });
+    attempt = await stub.mergeTask({
+      taskId: chosen.id,
+      forkRemote: chosen.fork_remote!,
+      testCommand: pc.test,
+      message: mergeMessage(chosen, decisionId),
+    });
+  } catch (e) {
+    // The merge sandbox could not even attempt the merge; hold the change rather than lose it.
+    const why = String(e).slice(0, 1500);
+    console.error("merge attempt failed", chosen.id, why);
+    await stub.abortMerge().catch(() => undefined);
+    await updateTask(env.DB, chosen.id, { status: "needs_review", error: `merge attempt failed: ${why}` });
+    await env.DB.prepare(
+      "INSERT INTO merges (task_id, project, decision_id, mode, conflict, output) VALUES (?, ?, ?, 'error', 0, ?)",
+    )
+      .bind(chosen.id, project, decisionId, why)
+      .run();
+    return { kind: "continue" };
+  }
 
   if (attempt.conflict) {
     const mergedGoals = (await recentMerges(env, project)).map((m) => m.goal);

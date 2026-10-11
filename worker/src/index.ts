@@ -186,6 +186,25 @@ app.get("/api/admin/bootstrap", async (c) =>
 
 app.get("/api/admin/tasks", async (c) => c.json(await listTasks(c.env.DB, c.req.query("project") ?? config.projects[0].id)));
 
+/** Start a merge round now (normally triggered when a task becomes ready). */
+app.post("/api/admin/merge/:project", async (c) => {
+  const pc = projectConfig(c.req.param("project"));
+  await triggerMerge(c.env, pc.id);
+  return c.json({ project: pc.id, status: "merge round requested" }, 202);
+});
+
+/** Operator reset for a task stuck by an infrastructure failure. */
+app.post("/api/admin/tasks/:id/status", async (c) => {
+  const task = await getTask(c.env.DB, c.req.param("id"));
+  if (!task) return c.json({ error: "not found" }, 404);
+  const body = (await c.req.json().catch(() => ({}))) as { status?: string };
+  const allowed = ["ready", "needs_review", "failed", "abandoned"];
+  if (!body.status || !allowed.includes(body.status)) return c.json({ error: `status must be one of ${allowed.join(", ")}` }, 400);
+  await updateTask(c.env.DB, task.id, { status: body.status as "ready", error: null });
+  if (body.status === "ready") await triggerMerge(c.env, task.project);
+  return c.json({ id: task.id, status: body.status });
+});
+
 export default {
   fetch: app.fetch,
   queue: handleQueue,
