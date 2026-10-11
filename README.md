@@ -74,10 +74,11 @@ an on-your-radar list, a session view with the agent's stream beside
 map, diff and decision tabs, and a work list. The Map view is the live
 visualisation of Artifacts: a three.js scene with `main` as the innermost
 ring and every branch as an arc on a concentric ring outside it, angle as
-time, commits as beads, spokes where a branch leaves and rejoins `main`,
-agents riding the tip of their live arc, and files on a quiet layer below
-that light up for whatever you select. Click a point to open the file, the
-commit or the agent's session. The timeline at the bottom replays a run.
+time, commits as beads sized by what they changed, spokes where a branch
+leaves and rejoins `main`, hour marks, and agents riding the tip of their
+live arc. Files stay in the panels. Click a bead or an agent to open the
+commit or the session, pick a file from a commit to light every commit that
+touched it. The timeline at the bottom replays a run.
 ⌘K opens the command palette. `GET /api/state`,
 `GET /api/tasks/:id/events` and `GET /api/history` are everything the
 page renders.

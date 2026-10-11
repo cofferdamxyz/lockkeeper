@@ -48,6 +48,15 @@ describe("ring layout", () => {
     expect(r(byId["commit:p:a1"].pos)).toBeCloseTo(MAIN_RADIUS + LANE_GAP);
   });
 
+  it("numbers a branch's commits in order and marks hours along main", () => {
+    const l = computeRings(state, now);
+    const a = l.branches.find((b) => b.task.id === "a")!;
+    expect(a.beads.map((b) => b.seq)).toEqual([1]);
+    expect(l.beads.find((b) => b.id === "commit:p:m1")!.seq).toBeNull();
+    expect(l.ticks.length).toBeGreaterThan(0);
+    expect(l.ticks.length).toBeLessThanOrEqual(8);
+  });
+
   it("maps time to angle monotonically and ends a live branch at now", () => {
     const l = computeRings(state, now);
     expect(l.angle(now - 3_600_000)).toBeLessThan(l.angle(now));

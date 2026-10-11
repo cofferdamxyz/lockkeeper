@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Color, type Group, type Mesh } from "three";
 
 import { type ActivityEvent, type StateView, type TaskView } from "@/lib/api";
-import { arcPoints, type Bead, type Branch, computeRings, hoverHeight, LANE_GAP, MAIN_RADIUS, type RingLayout, statusColor, type Vec3 } from "@/lib/rings";
+import { arcPoints, type Bead, beadRadius, type Branch, computeRings, hoverHeight, LANE_GAP, MAIN_RADIUS, type RingLayout, statusColor, type Vec3 } from "@/lib/rings";
 
 export interface SceneProps {
   state: StateView;
@@ -59,7 +59,7 @@ function Spoke({ from, to, color, opacity = 0.7, dashed = false }: { from: Vec3;
   return <Line points={[from, to]} color={color} lineWidth={1.4} transparent opacity={opacity} dashed={dashed} dashSize={0.08} gapSize={0.06} />;
 }
 
-function BeadPoint({ bead, lit, dim, onSelect, onHover }: { bead: Bead; lit: boolean; dim: boolean; onSelect: (id: string) => void; onHover: (id: string | null) => void }) {
+function BeadPoint({ bead, lit, dim, showSeq, onSelect, onHover }: { bead: Bead; lit: boolean; dim: boolean; showSeq: boolean; onSelect: (id: string) => void; onHover: (id: string | null) => void }) {
   const ref = useRef<Mesh>(null);
   const born = useRef<number | null>(null);
   useFrame(({ clock }) => {
@@ -83,12 +83,19 @@ function BeadPoint({ bead, lit, dim, onSelect, onHover }: { bead: Bead; lit: boo
       }}
       onPointerOut={() => onHover(null)}
     >
-      <sphereGeometry args={[bead.merge ? 0.095 : 0.065, 14, 14]} />
+      <sphereGeometry args={[beadRadius(bead), 14, 14]} />
       <meshPhongMaterial color={BLUE} emissive={BLUE} emissiveIntensity={lit ? 1 : dim ? 0.1 : 0.35} transparent opacity={dim ? 0.45 : 1} />
+      {showSeq && bead.seq !== null && !lit && (
+        <Html distanceFactor={10} center position={[0, 0.22, 0]} style={{ pointerEvents: "none" }}>
+          <div className="scene-seq">{bead.seq}</div>
+        </Html>
+      )}
       {lit && (
         <Html distanceFactor={12} style={{ pointerEvents: "none" }}>
           <div className="scene-label">
+            {bead.seq !== null && <span className="scene-seq inline">{bead.seq}</span>}
             <span className="mono text-blue-400">{bead.sha.slice(0, 7)}</span> {bead.label.slice(0, 60)}
+            {bead.files.length > 0 && <span className="text-muted-foreground"> · {bead.files.length} file{bead.files.length === 1 ? "" : "s"}</span>}
           </div>
         </Html>
       )}
@@ -228,25 +235,11 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
   const picked = selected ?? hovered;
   const pickedTask = state.tasks.find((t) => t.id === picked) ?? null;
   const pickedBead = layout.beads.find((b) => b.id === picked) ?? null;
+  // A file picked from a panel has no place in the space; the commits that touched it light up.
+  const pickedFile = picked && picked.startsWith("file:") ? (state.positions.find((p) => p.id === picked)?.label ?? null) : null;
   const litTask = pickedTask?.id ?? pickedBead?.task ?? focus ?? null;
-  const litFiles = new Set<string>(
-    pickedTask ? pickedTask.files : pickedBead ? (state.positions.find((p) => p.id === pickedBead.id)?.meta?.files ?? []) : focus ? (state.tasks.find((t) => t.id === focus)?.files ?? []) : [],
-  );
-  const filesByPath = new Map<string, Vec3>();
-  for (const p of state.positions) if (p.kind === "file") filesByPath.set(p.label, layout.files.get(p.id)?.pos ?? [0, 0, 0]);
-  const fileColor = dark ? "#8f9bb3" : "#6b7280";
-  const dirCentroids = useMemo(() => {
-    const m = new Map<string, { x: number; z: number; n: number }>();
-    for (const [, f] of layout.files) {
-      const a = m.get(f.dir) ?? { x: 0, z: 0, n: 0 };
-      a.x += f.pos[0];
-      a.z += f.pos[2];
-      a.n += 1;
-      m.set(f.dir, a);
-    }
-    return [...m.entries()].map(([dir, a]) => ({ dir, pos: [a.x / a.n, layout.files.size ? -1.3 : 0, a.z / a.n] as Vec3 }));
-  }, [layout.files]);
-  const litSource: Vec3 | null = pickedTask ? (layout.branches.find((b) => b.task.id === pickedTask.id)?.tip ?? null) : pickedBead ? pickedBead.pos : null;
+  const litBeadIds = new Set<string>(pickedFile ? layout.beads.filter((b) => b.files.includes(pickedFile)).map((b) => b.id) : []);
+  const tickColor = dark ? "#3a4a66" : "#b7bfcc";
 
   return (
     <>
@@ -270,9 +263,17 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         const dim = litTask !== null && !isLit;
         const color = b.conflict ? "#ff1919" : isLit ? "#ffffff" : t.status === "merged" ? "#5a86c7" : statusColor(t.status);
         const pts = arcPoints(layout, b.radius, b.uStart, b.uEnd);
+        const tip = pts[pts.length - 1];
+        const prev = pts[Math.max(0, pts.length - 2)];
+        const dir: Vec3 = [tip[0] - prev[0], 0, tip[2] - prev[2]];
+        const dl = Math.hypot(dir[0], dir[2]) || 1;
+        const ah = 0.16;
+        const left: Vec3 = [tip[0] - (dir[0] / dl) * ah - (dir[2] / dl) * ah * 0.5, 0, tip[2] - (dir[2] / dl) * ah + (dir[0] / dl) * ah * 0.5];
+        const right: Vec3 = [tip[0] - (dir[0] / dl) * ah + (dir[2] / dl) * ah * 0.5, 0, tip[2] - (dir[2] / dl) * ah - (dir[0] / dl) * ah * 0.5];
         return (
           <group key={t.id}>
             <Line points={pts} color={color} lineWidth={isLit ? 2.6 : b.live ? 2 : 1.4} transparent opacity={dim ? 0.25 : t.status === "merged" ? 0.75 : 1} />
+            {b.live && <Line points={[left, tip, right]} color={color} lineWidth={isLit ? 2.6 : 2} transparent opacity={dim ? 0.25 : 1} />}
             <Spoke from={b.base} to={pts[0]} color={color} opacity={dim ? 0.15 : 0.5} />
             {b.mergeOnMain && <Spoke from={pts[pts.length - 1]} to={b.mergeOnMain} color={color} opacity={dim ? 0.15 : 0.7} />}
             {t.status === "needs_review" && <Spoke from={pts[pts.length - 1]} to={layout.ringPoint(MAIN_RADIUS, layout.tEnd)} color="#f5b94a" opacity={0.6} dashed />}
@@ -287,10 +288,24 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         );
       })}
 
-      {/* beads */}
-      {layout.beads.map((bead) => (
-        <BeadPoint key={bead.id} bead={bead} lit={picked === bead.id || (!!litTask && bead.task === litTask)} dim={litTask !== null && bead.task !== litTask && picked !== bead.id} onSelect={onSelect} onHover={onHover} />
+      {/* hour marks along main */}
+      {layout.ticks.map((tk) => (
+        <group key={tk.at}>
+          <Spoke from={layout.ringPoint(MAIN_RADIUS - 0.12, tk.at)} to={layout.ringPoint(MAIN_RADIUS - 0.02, tk.at)} color={tickColor} opacity={1} />
+          {!compact && (
+            <Html position={layout.ringPoint(MAIN_RADIUS - 0.42, tk.at, 0)} distanceFactor={10} center style={{ pointerEvents: "none" }}>
+              <div className="scene-tick">{tk.label}</div>
+            </Html>
+          )}
+        </group>
       ))}
+
+      {/* beads: every commit, sized by the files it changed */}
+      {layout.beads.map((bead) => {
+        const lit = picked === bead.id || litBeadIds.has(bead.id) || (!!litTask && bead.task === litTask && !!pickedTask);
+        const dim = (litTask !== null && bead.task !== litTask && picked !== bead.id) || (litBeadIds.size > 0 && !litBeadIds.has(bead.id));
+        return <BeadPoint key={bead.id} bead={bead} lit={lit} dim={dim} showSeq={!!litTask && bead.task === litTask} onSelect={onSelect} onHover={onHover} />;
+      })}
 
       {/* agents on live arcs */}
       {layout.branches
@@ -307,47 +322,6 @@ function Content({ state, selected, hovered, onSelect, onHover, activity, dark, 
         const s = Math.max(e.cosine, e.paths);
         return <Line key={i} points={[[a.tip[0], hoverHeight(a.task, now), a.tip[2]], [b.tip[0], hoverHeight(b.task, now), b.tip[2]]]} color={s > 0.7 ? "#ff1919" : s > 0.45 ? "#f5b94a" : "#8a97b3"} lineWidth={1 + s * 2} transparent opacity={0.7} />;
       })}
-
-      {/* files: a quiet layer below, lit when something that touched them is picked */}
-      {state.positions
-        .filter((p) => p.kind === "file")
-        .map((p) => {
-          const f = layout.files.get(p.id);
-          if (!f) return null;
-          const lit = litFiles.has(p.label) || picked === p.id;
-          return (
-            <group key={p.id}>
-              <mesh
-                position={f.pos}
-                scale={lit ? 1.6 : 1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect(p.id);
-                }}
-                onPointerOver={(e) => {
-                  e.stopPropagation();
-                  onHover(p.id);
-                }}
-                onPointerOut={() => onHover(null)}
-              >
-                <sphereGeometry args={[0.06, 12, 12]} />
-                <meshPhongMaterial color={lit ? "#ffffff" : fileColor} emissive={lit ? "#ffffff" : fileColor} emissiveIntensity={lit ? 0.8 : 0.15} transparent opacity={lit ? 1 : 0.6} />
-                {(lit || picked === p.id) && (
-                  <Html distanceFactor={12} style={{ pointerEvents: "none" }}>
-                    <div className="scene-label">{p.label}</div>
-                  </Html>
-                )}
-              </mesh>
-              {lit && litSource && <Spoke from={litSource} to={f.pos} color="#ffffff" opacity={0.35} />}
-            </group>
-          );
-        })}
-      {!compact &&
-        dirCentroids.map((d) => (
-          <Html key={d.dir} position={[d.pos[0], d.pos[1] + 0.25, d.pos[2]]} distanceFactor={9} center style={{ pointerEvents: "none" }}>
-            <div className="scene-dir" style={{ color: fileColor }}>{d.dir === "." ? "ROOT" : d.dir.toUpperCase()}</div>
-          </Html>
-        ))}
 
       <MainRing busy={merging} head={state.project?.head ?? null} />
       {/* now marker: the gap in the circle */}

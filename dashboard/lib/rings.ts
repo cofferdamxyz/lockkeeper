@@ -4,7 +4,7 @@
  * whole history. A branch starts with a short spoke out from main at its base commit, carries its
  * commits as beads along its arc, and folds back into main with a spoke at its merge commit.
  * Rings are lanes: a merged branch frees its lane for a later branch whose arc does not overlap.
- * Files are a quiet layer below the rings, placed by the index projection.
+ * Files have no place in this space: they are attributes of commits and live in the panels.
  */
 import type { MergeView, PositionView, StateView, TaskStatus, TaskView } from "./api";
 
@@ -12,10 +12,8 @@ export type Vec3 = [number, number, number];
 
 export const MAIN_RADIUS = 1.5;
 export const LANE_GAP = 0.55;
-export const FILE_LAYER_Y = -1.3;
 const SPAN = (300 * Math.PI) / 180; // the arc of the circle that time occupies; the gap marks now
 const START = (120 * Math.PI) / 180; // where the oldest moment sits
-const FILE_SCALE = 2.4;
 
 export interface Bead {
   id: string;
@@ -24,8 +22,11 @@ export interface Bead {
   at: number;
   task: string | null;
   merge: boolean;
+  files: string[];
   pos: Vec3;
   ring: number; // 0 = main
+  /** 1-based order of this commit on its branch (merge beads and main commits have none). */
+  seq: number | null;
 }
 
 export interface Branch {
@@ -40,6 +41,8 @@ export interface Branch {
   base: Vec3; // where it left main
   mergeOnMain: Vec3 | null;
   conflict: boolean;
+  /** The commits on this branch, oldest first. */
+  beads: Bead[];
 }
 
 export interface RingLayout {
@@ -50,7 +53,8 @@ export interface RingLayout {
   ringPoint: (radius: number, t: number, y?: number) => Vec3;
   branches: Branch[];
   beads: Bead[];
-  files: Map<string, { pos: Vec3; dir: string }>;
+  /** Hour marks along main: a moment and its label. */
+  ticks: { at: number; label: string }[];
 }
 
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
@@ -105,9 +109,16 @@ export function computeRings(state: StateView, now: number): RingLayout {
       base: ringPoint(MAIN_RADIUS, start),
       mergeOnMain: mergedAt !== null && t.status === "merged" ? ringPoint(MAIN_RADIUS, mergedAt) : null,
       conflict: conflicts.has(t.id) && t.status === "merging",
+      beads: [],
     });
   }
   const laneOf = new Map(branches.map((b) => [b.task.id, b]));
+  // A branch leaves main at its base commit when that commit is known, else at its creation time.
+  const commitAt = new Map(commits.map((c) => [c.meta?.sha ?? "", new Date(c.meta!.at!).getTime()]));
+  for (const b of branches) {
+    const baseAt = b.task.baseSha ? commitAt.get(b.task.baseSha) : undefined;
+    if (baseAt !== undefined && baseAt <= now) b.base = ringPoint(MAIN_RADIUS, baseAt);
+  }
 
   // Beads: commits on their branch's ring, or on main when they are merges or have no task.
   const beads: Bead[] = [];
@@ -118,25 +129,39 @@ export function computeRings(state: StateView, now: number): RingLayout {
     const branch = task ? laneOf.get(task) : undefined;
     const onMain = c.meta?.merge || !branch;
     const radius = onMain ? MAIN_RADIUS : branch!.radius;
-    beads.push({
+    const bead: Bead = {
       id: c.id,
       sha: c.meta?.sha ?? "",
       label: c.label,
       at,
       task,
       merge: !!c.meta?.merge,
+      files: c.meta?.files ?? [],
       pos: ringPoint(radius, at),
       ring: onMain ? 0 : branch!.lane + 1,
+      seq: null,
+    };
+    beads.push(bead);
+    if (!onMain) branch!.beads.push(bead);
+  }
+  for (const b of branches) {
+    b.beads.sort((x, y) => x.at - y.at);
+    b.beads.forEach((bead, i) => {
+      bead.seq = i + 1;
     });
   }
 
-  const files = new Map<string, { pos: Vec3; dir: string }>();
-  for (const p of state.positions) {
-    if (p.kind !== "file") continue;
-    files.set(p.id, { pos: [p.x * FILE_SCALE, FILE_LAYER_Y, p.z * FILE_SCALE], dir: p.meta?.dir ?? "." });
+  // Hour marks: a readable step for the span, at most eight of them.
+  const hours = spanMs / 3_600_000;
+  const stepH = [0.25, 0.5, 1, 2, 3, 6, 12, 24, 48, 168].find((h) => hours / h <= 8) ?? 168;
+  const ticks: { at: number; label: string }[] = [];
+  const first = Math.ceil(tStart / (stepH * 3_600_000)) * stepH * 3_600_000;
+  for (let t = first; t <= tEnd; t += stepH * 3_600_000) {
+    const d = new Date(t);
+    ticks.push({ at: t, label: stepH >= 24 ? d.toLocaleDateString([], { month: "short", day: "numeric" }) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
   }
 
-  return { tStart, tEnd, lanes: laneEnds.length, angle, ringPoint, branches, beads, files };
+  return { tStart, tEnd, lanes: laneEnds.length, angle, ringPoint, branches, beads, ticks };
 }
 
 /** Points along an arc of a ring between two moments, for drawing. */
@@ -185,6 +210,11 @@ export function statusColor(s: TaskStatus): string {
     case "abandoned":
       return "#3e4654";
   }
+}
+
+/** Bead size grows a little with the number of files a commit changed. */
+export function beadRadius(b: Bead): number {
+  return (b.merge ? 0.095 : 0.058) + 0.01 * Math.min(6, b.files.length);
 }
 
 export function isPositionView(p: unknown): p is PositionView {

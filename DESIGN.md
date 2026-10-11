@@ -292,9 +292,12 @@ that produced it, an agent opens a link to its session.
   tip with an amber dashed spoke toward `main`. A conflict paints the arc
   red while the resolver works. Overlap between in-flight work is a line
   between arc tips.
-- **Files are a quiet layer below the rings**, placed by the index
-  projection and labelled by directory. Selecting a commit or an agent
-  lights the files it touched and draws lines down to them.
+- **Files have no place in this space.** Angle is time and radius is
+  branch, and a file is neither, so the map draws commits only: every bead
+  is sized by the files its commit changed, hour marks sit along `main`,
+  a live arc ends in an arrowhead, and selecting a branch numbers its
+  commits in order so it reads as A, then B, then C. Files live in the
+  panels; picking a file there lights every commit that touched it.
 - The ring spins while a merge is in progress and a ripple crosses the
   ground when one lands. The timeline replays the rings backwards.
 

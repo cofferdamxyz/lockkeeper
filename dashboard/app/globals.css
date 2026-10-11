@@ -139,3 +139,6 @@ body { font-family: var(--font-sans); }
 .scene-label .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
 .scene-label.gate { color: var(--muted-foreground); transform: translate(-50%, 0); }
 .scene-dir { font-size: 11px; letter-spacing: 0.16em; font-weight: 600; opacity: 0.75; white-space: nowrap; }
+.scene-seq { font-family: ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1; padding: 2px 5px; border-radius: 999px; background: color-mix(in oklab, var(--background) 80%, transparent); border: 1px solid var(--border); color: var(--foreground); }
+.scene-seq.inline { margin-right: 6px; }
+.scene-tick { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--muted-foreground); opacity: 0.8; white-space: nowrap; }
