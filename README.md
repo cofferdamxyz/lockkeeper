@@ -67,13 +67,16 @@ enters the merge round like an agent's.
 
 Open the Worker URL. The page asks for the dashboard token once and keeps
 it in the browser; `?token=…` in the URL also works and is stripped on
-load. The map is the Vectorize index projected onto three fixed axes:
-files are points coloured by directory, tasks are spheres that pulse
-while running, glide to the merge gate while merging and fade once
-merged, and edges join in-flight tasks whose work overlaps. Click a task
-for its diff, Clef's answers against the thresholds, the agent's output
-and the approve, retry and abandon actions; click a file for the tasks
-touching it. `GET /api/state` is everything the page renders.
+load. The map is the Vectorize index projected onto fixed axes and drawn
+with Pts: files are points coloured by directory inside their directory's
+territory, agents are nodes that breathe while running and carry ticks for
+what they are doing, edges join in-flight tasks whose work overlaps, and
+the lock on the right stages every merge. ⌘K opens the command palette,
+⌘N the launcher. A fleet strip follows live agents; the task sheet has
+overview, activity, diff and decision tabs with approve, retry and
+abandon; toasts announce transitions; the timeline at the bottom replays
+a run. `GET /api/state`, `GET /api/tasks/:id/events` and `GET /api/history`
+are everything the page renders.
 
 To preview the built dashboard locally against a deployed Lockkeeper
 without putting the token in a browser:
