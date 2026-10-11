@@ -10,7 +10,7 @@ import { handleQueue } from "./queue";
 import { indexProject } from "./repomap";
 import { SNAPSHOT_SETTING } from "./sandbox";
 import { getState } from "./state";
-import { createManualTask, createTasks, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
+import { createManualTask, createTasks, indexCommits, projectConfig, restartTask, submitManualTask, triggerMerge } from "./tasks";
 
 export { AgentSandbox } from "./sandbox";
 export { MergeWorkflow } from "./workflow";
@@ -227,6 +227,24 @@ app.post("/api/admin/merge/:project", async (c) => {
   const pc = projectConfig(c.req.param("project"));
   await triggerMerge(c.env, pc.id);
   return c.json({ project: pc.id, status: "merge round requested" }, 202);
+});
+
+/** Place the commits of every merged task on the map (backfill after upgrades). */
+app.post("/api/admin/reindex-commits/:project", async (c) => {
+  const pc = projectConfig(c.req.param("project"));
+  const rows = await c.env.DB.prepare(
+    "SELECT m.task_id, m.main_before, m.main_after FROM merges m WHERE m.project = ? AND m.main_after IS NOT NULL ORDER BY m.at",
+  )
+    .bind(pc.id)
+    .all<{ task_id: string; main_before: string | null; main_after: string }>();
+  let done = 0;
+  for (const r of rows.results) {
+    const task = await getTask(c.env.DB, r.task_id);
+    if (!task) continue;
+    await indexCommits(c.env, task, r.main_before, r.main_after);
+    done++;
+  }
+  return c.json({ project: pc.id, merges: done });
 });
 
 /** Operator reset for a task stuck by an infrastructure failure. */
