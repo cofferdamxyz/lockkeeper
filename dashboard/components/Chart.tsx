@@ -138,8 +138,9 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
             }),
           );
           const bound = Group.fromArray([[0, 0], [g.gateX - 90, g.h]]);
-          cells = Create.delaunay(pts).voronoi(bound);
-          (window as unknown as { __lk?: unknown }).__lk = { files: screenFiles.length, cells: cells.length, sizes: cells.map((c) => c.length), first: cells[0]?.map((q) => [Math.round(q.x), Math.round(q.y)]), w: g.w, h: g.h, gateX: g.gateX };
+          const mesh = Create.delaunay(pts);
+          mesh.delaunay(); // caches the triangulation that voronoi() reads
+          cells = mesh.voronoi(bound);
         } catch (e) {
           console.warn("voronoi failed", e);
           cells = [];
