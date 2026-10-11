@@ -67,16 +67,20 @@ enters the merge round like an agent's.
 
 Open the Worker URL. The page asks for the dashboard token once and keeps
 it in the browser; `?token=…` in the URL also works and is stripped on
-load. The map is the Vectorize index projected onto fixed axes and drawn
-with Pts: files are points coloured by directory inside their directory's
-territory, agents are nodes that breathe while running and carry ticks for
-what they are doing, edges join in-flight tasks whose work overlaps, and
-the lock on the right stages every merge. ⌘K opens the command palette,
-⌘N the launcher. A fleet strip follows live agents; the task sheet has
-overview, activity, diff and decision tabs with approve, retry and
-abandon; toasts announce transitions; the timeline at the bottom replays
-a run. `GET /api/state`, `GET /api/tasks/:id/events` and `GET /api/history`
-are everything the page renders.
+load. The shape is the one coding-agent apps made familiar: a sidebar
+with the project and its sessions, a home screen with the prompt box
+(one line per agent, auto merge or hold for review), the project bar and
+an on-your-radar list, a session view with the agent's stream beside
+map, diff and decision tabs, and a work list. The Map view is the live
+visualisation of Artifacts: the Vectorize index projected onto fixed
+axes and drawn with Pts. Files are points inside their directory's
+territory, agents are nodes that breathe while running and carry ticks
+for what they are doing, commits land as points beside the files they
+touched, edges join in-flight tasks whose work overlaps, and the lock on
+the right stages every merge. The timeline at the bottom replays a run.
+⌘K opens the command palette. `GET /api/state`,
+`GET /api/tasks/:id/events` and `GET /api/history` are everything the
+page renders.
 
 To preview the built dashboard locally against a deployed Lockkeeper
 without putting the token in a browser:

@@ -254,11 +254,19 @@ review and merge. The difference is that all of it runs on Artifacts, and
 that watching is the point: the dashboard is a live map of the work, not a
 list of pull requests.
 
-**Stack.** Next.js static export served as the Worker's assets. Pts draws
-the map on a canvas. shadcn/ui (Tailwind 4) is the chrome: everything you
-read or press. Motion moves things between the two. No three.js. Dark by
-default on a neutral scale with one accent, blue, reserved for live agents,
-the gate and the moment a merge lands; a light scheme is a toggle.
+**Shape.** The layout follows the coding-agent apps people already use: a
+sidebar with the project and its sessions, a home screen whose centre is
+the prompt box (one line per agent; auto merge or hold for review beside
+it), the project bar and an on-your-radar list, a session view with the
+agent's stream beside map, diff and decision tabs, a work list, and the
+Map view as the live visualisation of what is happening in Artifacts.
+
+**Stack.** Next.js static export served as the Worker's assets, set in
+Inter. Pts draws the map on a canvas. shadcn/ui (Tailwind 4) is the
+chrome: everything you read or press. Motion moves things between the
+two. No three.js. Dark by default on a neutral scale with one accent,
+blue, reserved for live agents, the gate and the moment a merge lands; a
+light scheme is a toggle.
 
 **The map (Pts).**
 
@@ -281,11 +289,15 @@ the gate and the moment a merge lands; a light scheme is a toggle.
   goal embeds. Drag pans, wheel zooms, depth gives parallax.
 - Faint ticks on a node echo its activity (reading, editing, testing), so
   the map alone says who is doing what.
+- Commits land as points beside the files they touched when a merge
+  reaches `main`, so the map accumulates the history of the work.
 
 **The chrome (shadcn/ui).**
 
 - A command palette (⌘K) launches goals, approves, and jumps to a task or a
-  file.
+  file. The sidebar lists the project's sessions with a status icon each.
+- A task launched in review mode never merges unattended; the mode sits
+  beside the prompt, the way an agent app offers interactive and auto.
 - A fleet strip along the bottom lists every live agent as a compact row:
   status, elapsed time, turns, cost, ticking.
 - A sheet opens on a node or a row with tabs: overview (goal, files,
