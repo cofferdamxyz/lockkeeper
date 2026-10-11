@@ -94,7 +94,7 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
       const h = space.height;
       const gateX = w - Math.min(170, w * 0.14);
       const cy = h * 0.5;
-      return { w, h, gateX, cy, chamber: { x1: gateX - 62, x2: gateX + 62, y1: cy - 54, y2: cy + 54 }, scale: Math.min(w * 0.62, h) * 0.34, cx: w * 0.4, mainX: gateX + 118 };
+      return { w, h, gateX, cy, chamber: { x1: gateX - 62, x2: gateX + 62, y1: cy - 54, y2: cy + 54 }, scale: Math.min(w * 0.62, h) * 0.46, cx: w * 0.4, mainX: gateX + 118 };
     };
 
     const toScreen = (mx: number, my: number, mz: number) => {
@@ -219,10 +219,14 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
       // gates: two halves that retract when open
       const gap = (open: number) => ((c.y2 - c.y1) / 2) * open;
       for (const [x, open] of [[c.x1, gt.left], [c.x2, gt.right]] as [number, number][]) {
-        const gp = gap(open);
         form.strokeOnly(gt.busy > 0 ? accent() : ink(0.8), 2);
-        form.line(Group.fromArray([[x, c.y1 - 6], [x, g.cy - gp - 2]]));
-        form.line(Group.fromArray([[x, g.cy + gp + 2], [x, c.y2 + 6]]));
+        if (open < 0.03) {
+          form.line(Group.fromArray([[x, c.y1 - 6], [x, c.y2 + 6]]));
+        } else {
+          const gp = gap(open);
+          form.line(Group.fromArray([[x, c.y1 - 6], [x, g.cy - gp - 2]]));
+          form.line(Group.fromArray([[x, g.cy + gp + 2], [x, c.y2 + 6]]));
+        }
       }
       // main
       form.strokeOnly(ink(0.5), 1.4).line(Group.fromArray([[g.mainX, c.y1 - 40], [g.mainX, c.y2 + 40]]));
@@ -254,7 +258,7 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
         if (!s) return;
         rebuild();
         // territories
-        form.strokeOnly(ink(0.08), 1);
+        form.strokeOnly(ink(0.16), 1);
         for (const cell of cells) if (cell.length > 2) form.polygon(cell);
         // directory labels
         const dirs = new Map<string, { x: number; y: number; n: number }>();
@@ -269,7 +273,7 @@ export default function Chart({ state, selected, hovered, onSelect, onHover, act
         const ctx = form.ctx as CanvasRenderingContext2D & { letterSpacing?: string };
         if ("letterSpacing" in ctx) ctx.letterSpacing = "0.16em";
         for (const [dir, d] of dirs) {
-          form.fillOnly(ink(0.32)).text(new Pt(d.x / d.n - 12, d.y / d.n - 16), dir.toUpperCase());
+          form.fillOnly(ink(0.5)).text(new Pt(d.x / d.n - 12, d.y / d.n - 18), dir.toUpperCase());
         }
         if ("letterSpacing" in ctx) ctx.letterSpacing = "0em";
         // files
