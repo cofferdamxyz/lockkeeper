@@ -2,7 +2,7 @@
 
 import { Check, FileCode2, Moon, Plus, Sun } from "lucide-react";
 
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command";
 import { isLive, type PositionView, STATUS_LABEL, type TaskView } from "@/lib/api";
 
 export function Palette({
@@ -32,6 +32,8 @@ export function Palette({
   const done = tasks.filter((t) => !isLive(t.status)).slice(-12).reverse();
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Lockkeeper" description="Launch, approve, jump">
+      {/* This shadcn style leaves the Command root to the caller; cmdk's primitives need it. */}
+      <Command>
       <CommandInput placeholder="Type a goal, a task id, a file…" />
       <CommandList>
         <CommandEmpty>Nothing matches.</CommandEmpty>
@@ -83,6 +85,7 @@ export function Palette({
           </CommandGroup>
         )}
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }
