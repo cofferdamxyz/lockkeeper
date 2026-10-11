@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import "./globals.css";
+
 export const metadata: Metadata = {
   title: "Lockkeeper",
   description: "Many coding agents, one repository.",
@@ -9,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: "#0b1020", color: "#e6edf7", fontFamily: "system-ui, sans-serif" }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
