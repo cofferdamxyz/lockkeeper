@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ExternalLink, FileCode2, GitCommitHorizontal, GitMe
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
+import { Prose } from "@/components/Prose";
 import { StatusIcon } from "@/components/StatusIcon";
 import { Timeline } from "@/components/Timeline";
 import { Badge } from "@/components/ui/badge";
@@ -481,7 +482,7 @@ export function MapView({
                     </div>
                   ) : null;
                 })()}
-                {selTask.summary && <p className="text-xs text-muted-foreground whitespace-pre-wrap max-h-60 overflow-auto">{selTask.summary}</p>}
+                {selTask.summary && <div className="text-xs text-muted-foreground max-h-60 overflow-auto"><Prose text={selTask.summary} /></div>}
               </div>
             </div>
           )}

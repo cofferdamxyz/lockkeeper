@@ -30,6 +30,15 @@ function Gauge({ label, value, threshold, max = 1, tone = "blue" }: { label: str
   );
 }
 
+function Fact({ label, children, tone }: { label: string; children: React.ReactNode; tone?: "good" | "bad" | "muted" }) {
+  return (
+    <div className="min-w-0">
+      <div className="eyebrow">{label}</div>
+      <div className={`text-sm mt-0.5 truncate ${tone === "good" ? "text-foreground" : tone === "bad" ? "text-red-400" : tone === "muted" ? "text-muted-foreground" : ""}`}>{children}</div>
+    </div>
+  );
+}
+
 export function TaskView({
   task,
   state,
@@ -48,62 +57,83 @@ export function TaskView({
   onAction: (task: TaskRow, action: TaskAction) => void;
 }) {
   const [diff, setDiff] = useState<string | null>(null);
+  const [brief, setBrief] = useState<string | null>(null);
   const [tab, setTab] = useState("map");
+  // The full row carries the brief and the diff; the state poll carries neither.
   useEffect(() => {
-    setDiff(null);
-  }, [task.id]);
-  useEffect(() => {
-    if (tab !== "diff" || diff !== null) return;
-    void api<{ diff: string | null }>(`/api/tasks/${task.id}`).then((t) => setDiff(t.diff ?? "")).catch(() => setDiff(""));
-  }, [tab, task.id, diff]);
+    let gone = false;
+    api<{ diff: string | null; brief: string | null }>(`/api/tasks/${task.id}`)
+      .then((t) => {
+        if (gone) return;
+        setDiff(t.diff ?? "");
+        setBrief(t.brief ?? "");
+      })
+      .catch(() => {
+        if (!gone) setDiff("");
+      });
+    return () => {
+      gone = true;
+    };
+  }, [task.id, task.status]);
   const decision = state?.decisions.find((d) => d.candidates.includes(task.id));
   const merges = (state?.merges ?? []).filter((m) => m.task_id === task.id);
   const live = task.status === "running" || task.status === "merging";
+  const duration = elapsed(task.createdAt, live ? now : new Date(task.updatedAt).getTime());
   return (
     <div className="h-full flex flex-col">
-      <header className="border-b px-6 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="size-8" aria-label="Back" onClick={() => navigate("/")}>
-          <ArrowLeft className="size-4" />
-        </Button>
-        <StatusIcon status={task.status} />
-        <h1 className="text-sm font-medium truncate flex-1">{task.goal}</h1>
-        <Badge variant="outline">{STATUS_LABEL[task.status]}</Badge>
-        {task.hold && <Badge variant="secondary">held: merges only with your approval</Badge>}
-        {task.resolved && <Badge variant="secondary">conflict resolved by agent</Badge>}
-        {task.status === "needs_review" && (
-          <Button size="sm" disabled={busy} onClick={() => onAction(task, "approve")}>
-            Approve merge
+      <header className="border-b px-6 pt-4 pb-3">
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="icon" className="size-8 -ml-2 shrink-0" aria-label="Back" onClick={() => navigate("/")}>
+            <ArrowLeft className="size-4" />
           </Button>
-        )}
-        {HOLDABLE.includes(task.status) && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, task.hold ? "release" : "hold")}>
-            {task.hold ? "Release hold" : "Hold for review"}
-          </Button>
-        )}
-        {["failed", "blocked", "needs_review", "abandoned"].includes(task.status) && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, "retry")}>
-            Retry from main
-          </Button>
-        )}
-        {!["merged", "abandoned"].includes(task.status) && (
-          <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => onAction(task, "abandon")}>
-            Abandon
-          </Button>
+          <StatusIcon status={task.status} className="size-4 mt-2" />
+          <h1 className="text-[15px] font-medium leading-snug flex-1 min-w-0 line-clamp-2 pt-1">{task.goal}</h1>
+          <div className="flex items-center gap-2 shrink-0 pt-0.5">
+            <Badge variant="outline">{STATUS_LABEL[task.status]}</Badge>
+            {task.status === "needs_review" && (
+              <Button size="sm" disabled={busy} onClick={() => onAction(task, "approve")}>
+                Approve merge
+              </Button>
+            )}
+            {HOLDABLE.includes(task.status) && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, task.hold ? "release" : "hold")}>
+                {task.hold ? "Release hold" : "Hold for review"}
+              </Button>
+            )}
+            {["failed", "blocked", "needs_review", "abandoned"].includes(task.status) && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => onAction(task, "retry")}>
+                Retry from main
+              </Button>
+            )}
+            {!["merged", "abandoned"].includes(task.status) && (
+              <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => onAction(task, "abandon")}>
+                Abandon
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="mt-3 ml-9 grid grid-cols-[repeat(auto-fit,minmax(110px,max-content))] gap-x-8 gap-y-2">
+          <Fact label="Task"><span className="mono">{task.id.slice(-4)}</span></Fact>
+          <Fact label="Base → head"><span className="mono">{short(task.baseSha)} → {short(task.headSha)}</span></Fact>
+          <Fact label="Tests" tone={task.testsOk === null ? "muted" : task.testsOk ? "good" : "bad"}>{task.testsOk === null ? "not run yet" : task.testsOk ? "green" : "red"}</Fact>
+          <Fact label="Cost" tone={task.costUsd == null ? "muted" : undefined}><span className="mono">{task.costUsd == null ? "—" : `$${task.costUsd.toFixed(3)}`}</span></Fact>
+          <Fact label={live ? "Running for" : "Took"}><span className="mono">{duration}</span></Fact>
+          <Fact label="Commits"><span className="mono">{task.commits.length || "—"}</span></Fact>
+          {task.hold && <Fact label="Merge">only with your approval</Fact>}
+          {task.resolved && <Fact label="Conflict">resolved by the resolver agent</Fact>}
+        </div>
+        {task.files.length > 0 && (
+          <div className="mt-2.5 ml-9 flex flex-wrap gap-1">
+            {task.files.map((f) => (
+              <span key={f} className="mono text-[11px] rounded-md border px-1.5 py-0.5 text-muted-foreground">{f}</span>
+            ))}
+          </div>
         )}
       </header>
-      <div className="mono text-[11px] text-muted-foreground px-6 py-2 border-b flex flex-wrap gap-x-5 gap-y-1">
-        <span>{task.id}</span>
-        <span>base {short(task.baseSha)}</span>
-        <span>head {short(task.headSha)}</span>
-        <span>tests {task.testsOk === null ? "—" : task.testsOk ? "green" : "red"}</span>
-        <span>{task.costUsd == null ? "cost —" : `$${task.costUsd.toFixed(3)}`}</span>
-        <span>{elapsed(task.createdAt, live ? now : new Date(task.updatedAt).getTime())}</span>
-        {task.files.length > 0 && <span className="truncate">{task.files.join(" · ")}</span>}
-      </div>
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_460px]">
         <div className="min-h-0 overflow-auto px-6 py-5">
           <div className="max-w-2xl">
-            <ActivityStream task={task} events={activity} live={live} />
+            <ActivityStream task={task} events={activity} brief={brief} live={live} />
             {task.error && <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs whitespace-pre-wrap">{task.error}</p>}
           </div>
         </div>
@@ -137,7 +167,7 @@ export function TaskView({
                   <Gauge label="unattended" value={decision.unattended[task.id]} threshold={task.resolved ? state?.config.clef.unattendedAfterResolve : state?.config.clef.unattended} />
                   <Gauge label="risk" value={decision.risk[task.id]} max={3} threshold={state?.config.clef.maxRisk} tone="amber" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    {task.hold ? "Launched in review mode: it waits for you regardless of the answers." : `Merges unattended when the yes probability clears the mark and risk stays under ${state?.config.clef.maxRisk}; otherwise it waits for you at the gate.`}
+                    {task.hold ? "Held: it waits for you regardless of the answers." : `Merges unattended when the yes probability clears the mark and risk stays under ${state?.config.clef.maxRisk}; otherwise it waits for you at the lock.`}
                   </p>
                   {decision.error && <p className="text-xs text-red-400">{decision.error}</p>}
                 </>

@@ -370,9 +370,16 @@ above it, and `main` is the column at the lock.
   file. The sidebar lists the project's sessions with a status icon each.
 - A task launched in review mode never merges unattended; the mode sits
   beside the prompt, the way an agent app offers interactive and auto.
-- A sheet opens on a node or a row with tabs: overview, activity (the
-  agent's parsed stream), diff, decision (Clef's answers as gauges with
-  the threshold mark). Approve is the only accented action.
+- The session view is the agent's run as a record: a header of facts
+  (base and head, tests, cost, duration, commits, the files it touched),
+  what the agent was told (the brief, folded), then the run as a
+  timeline where each tool call is paired with its result, shell lines
+  read as their first command plus a count, outputs that carry a signal
+  (test counts, commit shas, errors) show inline and the rest unfold on
+  click, the agent's notes and its outcome render as prose, and its
+  commits close the record in order. Beside it, tabs for the map, the
+  diff and the decision (Clef's answers as gauges with the threshold
+  mark). Approve is the only accented action.
 - Toasts announce ready, merged, conflict, needs review.
 
 **Data.** `GET /api/state` carries the files, every commit with its
@@ -550,6 +557,11 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-11 (night): the session view polished: a facts header with
+  file chips, the brief shown, tool calls paired with their results and
+  foldable, signal outputs inline, notes and outcomes as prose, the
+  closing note no longer repeated by the outcome, commits listed in
+  order.
 - 2026-10-11 (evening, after looking at Cursor's agent home): the
   composer's decisions move above the box as chips with a ⇧Tab toggle;
   four starters that act replace the dialog buttons; a getting-started
