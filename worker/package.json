@@ -7,9 +7,12 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "check": "pnpm run types && tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && vitest run -c vitest.cofferdam.config.ts",
     "db:migrate:local": "wrangler d1 migrations apply lockkeeper --local",
-    "db:migrate": "wrangler d1 migrations apply lockkeeper --remote"
+    "db:migrate": "wrangler d1 migrations apply lockkeeper --remote",
+    "deploy:cofferdam": "wrangler deploy -c wrangler.cofferdam.jsonc",
+    "db:migrate:cofferdam": "wrangler d1 migrations apply lockkeeper-cofferdam --remote -c wrangler.cofferdam.jsonc",
+    "dev:cofferdam": "wrangler dev -c wrangler.cofferdam.jsonc --var ENVIRONMENT:development --test-scheduled"
   },
   "dependencies": {
     "hono": "4.13.13",

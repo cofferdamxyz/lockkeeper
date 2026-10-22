@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Lockkeeper, the Cofferdam advisory deployment (DESIGN.md §12–§13, workspace decision 0053).
+  // Advice only: no sandbox, no Artifacts, no outbound gateway, no merge Workflow, no dashboard.
+  // Deploy from the Mac: `pnpm --filter worker deploy:cofferdam`.
+  "name": "lockkeeper-cofferdam",
+  "main": "src/advise/index.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // Only the Access-protected hostname: a workers.dev URL would skip Access (the Worker still refuses it).
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "lockkeeper.cofferdam.xyz", "custom_domain": true }],
+
+  // The poller: GitHub every five minutes, no public ingress, no webhook secret.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    // Set after the founder creates the GitHub App (its numeric App ID; not a secret).
+    "GITHUB_APP_ID": "",
+    "ACCESS_TEAM_DOMAIN": "https://cofferdam.cloudflareaccess.com",
+    // The Access application's AUD tag (Zero Trust → Access → Applications → lockkeeper). Empty: every request is refused.
+    "ACCESS_AUD": ""
+  },
+  "secrets": { "required": ["GITHUB_APP_PRIVATE_KEY"] },
+
+  "ai": { "binding": "AI" },
+  // wrangler vectorize create lockkeeper-cofferdam --dimensions=1024 --metric=cosine
+  // wrangler vectorize create-metadata-index lockkeeper-cofferdam --property-name=repo --type=string
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "lockkeeper-cofferdam" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lockkeeper-cofferdam",
+      // wrangler d1 create lockkeeper-cofferdam, then paste its id here.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations-cofferdam"
+    }
+  ]
+}

@@ -11,12 +11,37 @@ export interface ProjectConfig {
   conventions: string;
   /** Command the harness and the merge sandbox run before a change is ready or merged. */
   test: string;
-  /** How a decided change reaches the system of record. */
+  /** How a decided change reaches the system of record. `advise` lives in `advise` below: no runner, no merge. */
   mergeMode: "mirror" | "pull-request";
+}
+
+/**
+ * The advisory deployment (`worker/wrangler.cofferdam.jsonc`, DESIGN.md §12–§13): it reads GitHub
+ * through its own GitHub App, keeps the index and claims, and advises. It never launches an agent
+ * and never merges, so nothing here names a sandbox, a fork or a merge mode.
+ */
+export interface AdviseConfig {
+  /** GitHub organisation (or user) the App is installed on. */
+  owner: string;
+  /** Repositories (names, without the owner) the App can see but the index skips. Empty: all of them. */
+  exclude: string[];
+  /**
+   * Globs, `<repo>/<path>`, a change may never touch and still be unattended-eligible. `*` stays
+   * inside one path segment, `**` crosses segments; a leading `**` matches every repository.
+   */
+  sensitive: string[];
+  /** A branch with no commit for this many days drops out of "in flight" unless a pull request is open. */
+  staleDays: number;
+  claims: { defaultMinutes: number; maxMinutes: number };
+  /** Minimum cosine similarity for a change with no shared path to count as near. */
+  nearCosine: number;
+  /** Window for "landed on main recently" in briefs. */
+  recentHours: number;
 }
 
 export interface LockkeeperConfig {
   projects: ProjectConfig[];
+  advise: AdviseConfig;
   clef: {
     /** `clef` for the merge decision; `clef-flash` is enough for cheap, frequent questions. */
     model: "clef" | "clef-flash";
@@ -55,6 +80,21 @@ const config: LockkeeperConfig = {
     unattendedAfterResolve: 0.9,
     maxRisk: 1.0,
     maxCandidates: 20,
+  },
+  // Cofferdam's advisory deployment (workspace decision 0053). The sensitive list is the decision's.
+  advise: {
+    owner: "cofferdamxyz",
+    exclude: ["cofferdam-prover"],
+    sensitive: [
+      "cofferdam-api/src/auth/**",
+      "base-contracts/**",
+      "**/wrangler.jsonc",
+      "cofferdam-os/deployment.jsonc",
+    ],
+    staleDays: 14,
+    claims: { defaultMinutes: 60, maxMinutes: 240 },
+    nearCosine: 0.6,
+    recentHours: 24,
   },
   agents: {
     model: "claude-sonnet-5-5",

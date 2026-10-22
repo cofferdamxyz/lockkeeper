@@ -2,12 +2,15 @@
   "name": "lockkeeper-monorepo",
   "private": true,
   "packageManager": "pnpm@11.7.0",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "pnpm -r --filter dashboard build",
     "check": "pnpm -r check",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test claude-code/hooks/lockkeeper.test.mjs",
     "deploy": "pnpm --filter dashboard build && pnpm --filter worker deploy",
-    "dev": "pnpm --filter worker dev"
+    "dev": "pnpm --filter worker dev",
+    "deploy:cofferdam": "pnpm --filter worker deploy:cofferdam"
   }
 }
