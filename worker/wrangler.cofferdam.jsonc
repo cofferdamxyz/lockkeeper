@@ -19,7 +19,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     // Set after the founder creates the GitHub App (its numeric App ID; not a secret).
-    "GITHUB_APP_ID": "",
+    "GITHUB_APP_ID": "5420783",
     "ACCESS_TEAM_DOMAIN": "https://cofferdam.cloudflareaccess.com",
     // The Access application's AUD tag (Zero Trust → Access → Applications → lockkeeper). Empty: every request is refused.
     "ACCESS_AUD": ""
