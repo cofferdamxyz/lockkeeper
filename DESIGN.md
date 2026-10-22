@@ -482,15 +482,18 @@ lacks:
   number that could later unlock fast-forward landing under a bypass
   identity. These remain the finalist decision pass of the workspace
   `docs/product/engine.md` (E1/E8) with a different state.
-- **A sensitive-path list** (`cofferdam-api/src/auth/**`, `base-contracts/**`,
-  every `wrangler.jsonc`, the OS `deployment.jsonc`): a pull request touching
-  one is never unattended-eligible and gets a `security` label suggestion. The list is
-  `advise.sensitive` in `lockkeeper.config.ts`; the brief and the check
-  name the sensitive paths from step 1, the label suggestion and the
-  eligibility verdict come with step 3's comments. Open: `cofferdam-api` has
-  no `src/auth/` today (csa1 and the authority checks live in
-  `src/services/sessionAttestation.ts` and `authorityCheck.ts`), so the
-  decided glob matches nothing until the founder names the real paths.
+- **A sensitive-path list**: a pull request touching one is never
+  unattended-eligible and gets a `security` label suggestion. The list is
+  `advise.sensitive` in `lockkeeper.config.ts`, corrected on 2026-10-22 to
+  the real paths (the decision's `cofferdam-api/src/auth/**` matched
+  nothing): the plane's session attestation, authority checks, ceremonies,
+  Self binding, user operations, relay and `env.ts`, with their routes; the
+  whole attester; the app's passkey, recovery phrase and wallet modules;
+  `base-contracts/**`; every `wrangler.jsonc`; the OS `deployment.jsonc` and
+  `scripts/**`; and every `.github/workflows/**`, because CI is the evidence
+  and a change to it must never go unattended. The brief and the check name
+  the sensitive paths from step 1, the label suggestion and the eligibility
+  verdict come with step 3's comments.
 - **The index pattern**, which is the OS's rebuildable vector layer over
   commits and decisions from decision 0006.
 
@@ -602,10 +605,12 @@ fails if the entry ever imports the runner or the config binds it.
   something to say), with the changed paths of the current branch; on
   `PreToolUse` for Bash, before `git commit` and `git push`, it computes the
   merge base and changed paths locally, asks `/v1/check` and adds the answer
-  to the context. It never blocks: with `LOCKKEEPER_PUSH=hold-once` a push
-  whose files collide with what landed is held once with the reason and goes
-  through the second time. Unconfigured, unreachable or slow (four seconds),
-  it exits 0 with nothing. Nothing runs after a push. Example settings and
+  to the context. It blocks in one case only, because that context reaches
+  the model next to the tool's result, after the push already ran: a push
+  whose files collide with what landed on `main` is held once with the
+  reason, so the session rebases first, and the same push goes through the
+  second time (`LOCKKEEPER_PUSH=inform` turns the hold off). Unconfigured,
+  unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs after a push. Example settings and
   MCP config sit beside it.
 
 **What an organisation customises** (`lockkeeper.config.ts` at the

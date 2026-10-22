@@ -81,15 +81,36 @@ const config: LockkeeperConfig = {
     maxRisk: 1.0,
     maxCandidates: 20,
   },
-  // Cofferdam's advisory deployment (workspace decision 0053). The sensitive list is the decision's.
+  // Cofferdam's advisory deployment (workspace decision 0053). The sensitive list names the real
+  // paths (corrected 2026-10-22: the decision's `cofferdam-api/src/auth/**` matched nothing):
+  // the plane's session attestation, authority checks, ceremonies, Self binding, user operations
+  // and relay; the whole attester; the app's passkey, recovery phrase and wallet; the contracts;
+  // every Worker config and the OS deployment and deploy script; and every CI workflow, because
+  // CI is the evidence and a change to it must never go unattended.
   advise: {
     owner: "cofferdamxyz",
     exclude: ["cofferdam-prover"],
     sensitive: [
-      "cofferdam-api/src/auth/**",
+      "cofferdam-api/src/env.ts",
+      "cofferdam-api/src/services/sessionAttestation.ts",
+      "cofferdam-api/src/services/authorityCheck.ts",
+      "cofferdam-api/src/services/ceremony.ts",
+      "cofferdam-api/src/services/selfBind.ts",
+      "cofferdam-api/src/services/userOp.ts",
+      "cofferdam-api/src/services/relaySend.ts",
+      "cofferdam-api/src/routes/ceremony.ts",
+      "cofferdam-api/src/routes/session.ts",
+      "cofferdam-api/src/routes/aa.ts",
+      "cofferdam-api/src/routes/self.ts",
+      "cofferdam-attester/**",
+      "cofferdam-app/src/lib/passkey.ts",
+      "cofferdam-app/src/lib/recoveryPhrase.ts",
+      "cofferdam-app/src/lib/wallet.ts",
       "base-contracts/**",
       "**/wrangler.jsonc",
+      "**/.github/workflows/**",
       "cofferdam-os/deployment.jsonc",
+      "cofferdam-os/scripts/**",
     ],
     staleDays: 14,
     claims: { defaultMinutes: 60, maxMinutes: 240 },

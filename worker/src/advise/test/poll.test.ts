@@ -12,7 +12,7 @@ function world(): { gh: FakeGitHub; api: FakeRepo } {
     pushedAt: "2026-10-22T01:00:00Z",
     main: [root],
     branches: {
-      "claude/auth-fix": { base: root.sha, commits: [commit("auth: check expiry", ["src/auth/csa1.ts", "test/auth.test.ts"])] },
+      "claude/auth-fix": { base: root.sha, commits: [commit("auth: check expiry", ["src/services/sessionAttestation.ts", "test/auth.test.ts"])] },
       "claude/merged": { base: root.sha, commits: [] },
     },
     pulls: [{ number: 7, title: "Check csa1 expiry", branch: "claude/auth-fix" }],
@@ -39,8 +39,8 @@ describe("the poller", () => {
     expect(r.repos).toBe(1); // the prover is excluded, the archived repository skipped
     const [b, ...rest] = await getBranches(env, "cofferdamxyz/cofferdam-api");
     expect(rest).toEqual([]); // `claude/merged` is not ahead of main
-    expect(b).toMatchObject({ name: "claude/auth-fix", ahead: 1, behind: 0, pr_number: 7, ci: "pass", sensitive: ["src/auth/csa1.ts"] });
-    expect(b.files).toEqual(["src/auth/csa1.ts", "test/auth.test.ts"]);
+    expect(b).toMatchObject({ name: "claude/auth-fix", ahead: 1, behind: 0, pr_number: 7, ci: "pass", sensitive: ["src/services/sessionAttestation.ts"] });
+    expect(b.files).toEqual(["src/services/sessionAttestation.ts", "test/auth.test.ts"]);
     expect(gh.calls.some((c) => c.startsWith("POST") && !c.includes("access_tokens"))).toBe(false); // reads only
   });
 

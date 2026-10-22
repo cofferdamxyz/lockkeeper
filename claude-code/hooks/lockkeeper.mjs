@@ -5,8 +5,10 @@
 //   node lockkeeper.mjs pre-tool        PreToolUse on Bash: before `git commit` and `git push`,
 //                                       what moved on the default branch and what is in flight
 // Awareness, never a lock: every failure (no network, no credentials, Lockkeeper down) exits 0
-// silently and the session carries on. With LOCKKEEPER_PUSH=hold-once a push whose files collide
-// with what landed on main is held once with the reason; the same push again goes through.
+// silently and the session carries on. One exception, because a PreToolUse hook's context reaches
+// the model next to the tool's result, after the push already ran: a push whose files collide
+// with what landed on main is held once, with the reason, so the session rebases first; the same
+// push again goes through. LOCKKEEPER_PUSH=inform turns that off and only adds context.
 //
 // Environment: LOCKKEEPER_URL (https://lockkeeper.cofferdam.xyz), LOCKKEEPER_ACCESS_CLIENT_ID and
 // LOCKKEEPER_ACCESS_CLIENT_SECRET (a Cloudflare Access service token). Node 18 or newer.
@@ -75,6 +77,11 @@ export function commandDir(command, cwd) {
   return dir.startsWith("/") ? dir : join(cwd, dir);
 }
 
+/** A colliding push is held once unless LOCKKEEPER_PUSH=inform; commits and clean pushes never are. */
+export function shouldHold(verb, result, env = process.env) {
+  return verb === "push" && Boolean(result?.collisions?.length) && env.LOCKKEEPER_PUSH !== "inform";
+}
+
 export function gitVerb(command) {
   const m = /\bgit\b(?:\s+-C\s+\S+|\s+-c\s+\S+)*\s+(commit|push)\b/.exec(command);
   return m ? m[1] : null;
@@ -140,7 +147,7 @@ async function preTool(input) {
   } catch {
     return;
   }
-  if (verb === "push" && result.collisions?.length && process.env.LOCKKEEPER_PUSH === "hold-once") {
+  if (shouldHold(verb, result, process.env)) {
     const key = createHash("sha256").update(`${s.repo}\n${s.branch}\n${git(dir, ["rev-parse", "HEAD"])}\n${result.head}`).digest("hex").slice(0, 16);
     const mark = join(tmpdir(), `lockkeeper-held-${key}`);
     if (!existsSync(mark)) {

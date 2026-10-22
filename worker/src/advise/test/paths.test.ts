@@ -25,12 +25,15 @@ describe("globs", () => {
 
 describe("the sensitive-path list (decision 0053)", () => {
   const s = config.advise.sensitive;
-  it("marks the decided paths in their repositories only", () => {
-    expect(sensitiveHits("cofferdamxyz/cofferdam-api", ["src/auth/csa1.ts", "src/routes/chat.ts"], s)).toEqual(["src/auth/csa1.ts"]);
-    expect(sensitiveHits("cofferdamxyz/cofferdam-app", ["src/auth/x.ts"], s)).toEqual([]);
+  it("marks the real paths in their repositories only", () => {
+    expect(sensitiveHits("cofferdamxyz/cofferdam-api", ["src/services/sessionAttestation.ts", "src/routes/chat.ts"], s)).toEqual(["src/services/sessionAttestation.ts"]);
+    expect(sensitiveHits("cofferdamxyz/cofferdam-api", ["src/routes/session.ts", "src/env.ts", "src/services/chatUsageStore.ts"], s)).toEqual(["src/routes/session.ts", "src/env.ts"]);
+    expect(sensitiveHits("cofferdamxyz/cofferdam-app", ["src/lib/passkey.ts", "src/lib/chats.ts"], s)).toEqual(["src/lib/passkey.ts"]);
+    expect(sensitiveHits("cofferdamxyz/cofferdam-attester", ["src/celoGate.ts"], s)).toEqual(["src/celoGate.ts"]);
     expect(sensitiveHits("cofferdamxyz/base-contracts", ["contracts/account/A.sol"], s)).toEqual(["contracts/account/A.sol"]);
     expect(sensitiveHits("cofferdamxyz/cofferdam-api", ["xmtp/cleanup/wrangler.jsonc", "wrangler.jsonc"], s)).toHaveLength(2);
-    expect(sensitiveHits("cofferdamxyz/cofferdam-os", ["deployment.jsonc", "context/x.md"], s)).toEqual(["deployment.jsonc"]);
+    expect(sensitiveHits("cofferdamxyz/cofferdam-sdk", [".github/workflows/ci.yml", "packages/core/src/index.ts"], s)).toEqual([".github/workflows/ci.yml"]);
+    expect(sensitiveHits("cofferdamxyz/cofferdam-os", ["deployment.jsonc", "scripts/deploy.ts", "context/x.md"], s)).toEqual(["deployment.jsonc", "scripts/deploy.ts"]);
   });
 });
 

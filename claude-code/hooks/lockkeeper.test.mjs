@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 
-import { commandDir, gitVerb, repoFromRemote } from "./lockkeeper.mjs";
+import { commandDir, gitVerb, repoFromRemote, shouldHold } from "./lockkeeper.mjs";
+
+test("holds a colliding push once by default, never a commit or a clean push", () => {
+  assert.equal(shouldHold("push", { collisions: ["package.json"] }, {}), true);
+  assert.equal(shouldHold("push", { collisions: ["package.json"] }, { LOCKKEEPER_PUSH: "inform" }), false);
+  assert.equal(shouldHold("push", { collisions: [] }, {}), false);
+  assert.equal(shouldHold("push", {}, {}), false);
+  assert.equal(shouldHold("commit", { collisions: ["package.json"] }, {}), false);
+});
 
 test("reads the repository from any remote", () => {
   assert.equal(repoFromRemote("https://github.com/cofferdamxyz/cofferdam-app.git"), "cofferdamxyz/cofferdam-app");
