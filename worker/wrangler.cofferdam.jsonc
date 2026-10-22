@@ -22,7 +22,7 @@
     "GITHUB_APP_ID": "5420783",
     "ACCESS_TEAM_DOMAIN": "https://cofferdam.cloudflareaccess.com",
     // The Access application's AUD tag (Zero Trust → Access → Applications → lockkeeper). Empty: every request is refused.
-    "ACCESS_AUD": ""
+    "ACCESS_AUD": "19686bd1266bfab6d8e37eab2d961758383a44d238823551326b3f2dc0050fd8"
   },
   "secrets": { "required": ["GITHUB_APP_PRIVATE_KEY"] },
 
