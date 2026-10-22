@@ -1,6 +1,6 @@
 import config, { type AdviseConfig } from "../../../lockkeeper.config";
 import type { AdviseEnv } from "./env";
-import { ciFromComments, GitHub, type Fetch, type PullInfo } from "./github";
+import { ciFromComments, GitHub, GitHubError, type CompareInfo, type Fetch, type PullInfo } from "./github";
 import { sensitiveHits } from "./paths";
 import {
   addMainMove,
@@ -122,7 +122,22 @@ async function pollRepo(
       if (old && old.head_sha === b.commit.sha && old.base_sha && head === prev?.head_sha) {
         continue; // unchanged; PR fields refresh below
       }
-      const cmp = await gh.compare(repo, defaultBranch, b.name);
+      let cmp: CompareInfo;
+      try {
+        cmp = await gh.compare(repo, defaultBranch, b.name);
+      } catch (err) {
+        // A branch with no common ancestor (an orphan release branch, say) is not work in flight
+        // on the default branch: GitHub answers 404 "No common ancestor". Skip it quietly.
+        if (err instanceof GitHubError && err.status === 404) {
+          if (old) {
+            await deleteBranch(env, repo, b.name);
+            await remove(env, [await branchVectorId(repo, b.name)]);
+            report.branchesRemoved++;
+          }
+          continue;
+        }
+        throw err;
+      }
       if (cmp.ahead_by === 0 && !pr) {
         if (old) {
           await deleteBranch(env, repo, b.name);

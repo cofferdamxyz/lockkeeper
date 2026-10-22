@@ -14,6 +14,8 @@ function world(): { gh: FakeGitHub; api: FakeRepo } {
     branches: {
       "claude/auth-fix": { base: root.sha, commits: [commit("auth: check expiry", ["src/services/sessionAttestation.ts", "test/auth.test.ts"])] },
       "claude/merged": { base: root.sha, commits: [] },
+      // An orphan release branch (cofferdam-sdk has these): no common ancestor with main.
+      "release-core-main": { base: "", commits: [commit("release: core", ["dist/index.js"])] },
     },
     pulls: [{ number: 7, title: "Check csa1 expiry", branch: "claude/auth-fix" }],
     comments: {},
@@ -38,7 +40,7 @@ describe("the poller", () => {
     expect(r.errors).toEqual([]);
     expect(r.repos).toBe(1); // the prover is excluded, the archived repository skipped
     const [b, ...rest] = await getBranches(env, "cofferdamxyz/cofferdam-api");
-    expect(rest).toEqual([]); // `claude/merged` is not ahead of main
+    expect(rest).toEqual([]); // `claude/merged` is not ahead of main; the orphan `release-core-main` is skipped, not an error
     expect(b).toMatchObject({ name: "claude/auth-fix", ahead: 1, behind: 0, pr_number: 7, ci: "pass", sensitive: ["src/services/sessionAttestation.ts"] });
     expect(b.files).toEqual(["src/services/sessionAttestation.ts", "test/auth.test.ts"]);
     expect(gh.calls.some((c) => c.startsWith("POST") && !c.includes("access_tokens"))).toBe(false); // reads only

@@ -109,6 +109,8 @@ export function fakeFetch(gh: FakeGitHub) {
       const head = lineage(repo, decodeURIComponent(cmp[2]));
       let k = 0;
       while (k < base.length && k < head.length && base[k].sha === head[k].sha) k++;
+      // GitHub's answer for a branch that shares no history with the base (an orphan branch).
+      if (k === 0) return json({ message: `No common ancestor between ${cmp[1]} and ${cmp[2]}.` }, 404);
       const ahead = head.slice(k);
       const files = [...new Set(ahead.flatMap((c) => c.files))].map((filename) => ({ filename }));
       return json({
