@@ -35,7 +35,7 @@
       "binding": "DB",
       "database_name": "lockkeeper-cofferdam",
       // wrangler d1 create lockkeeper-cofferdam, then paste its id here.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "c0ab35c8-9e4b-4d2e-98ed-b637aecff31b",
       "migrations_dir": "migrations-cofferdam"
     }
   ]
