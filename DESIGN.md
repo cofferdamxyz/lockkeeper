@@ -599,6 +599,14 @@ fails if the entry ever imports the runner or the config binds it.
   JSON responses: `brief`, `claim`, `renew_claim`, `release_claim`, `check`,
   `in_flight`. A tool that fails answers as text with `isError`, so a session
   carries on without Lockkeeper.
+- *Stdio proxy.* `claude-code/mcp-stdio.mjs`, one Node script with no
+  dependencies: a stdio MCP server that POSTs each JSON-RPC line to `/mcp`
+  with the service-token headers from its environment and writes the answer
+  back (a notification's 202 produces nothing). It exists because a Claude
+  desktop-app session has no shell that loaded the workspace `.envrc`, so an
+  HTTP MCP entry with `${VAR}` headers would send empty headers there; run
+  under `direnv exec <workspace>`, the proxy reads the token at start and
+  nothing secret is written into a settings file.
 - *Hooks.* `claude-code/hooks/lockkeeper.mjs`, one Node script with no
   dependencies: on `SessionStart` it prints the brief for the repository (or,
   in a cloud session that starts above the clones, for each clone with

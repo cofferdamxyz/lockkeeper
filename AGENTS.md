@@ -35,8 +35,10 @@ minting its installation token until step 3 adds comments;
   client, the poller, claims, the in-flight answer and the brief, Access
   verification, the MCP server. Its D1 migrations are
   `worker/migrations-cofferdam/`.
-- `claude-code/` — the hook script and example settings and MCP config
-  through which Claude Code sessions read the Cofferdam deployment.
+- `claude-code/` — the hook script, a stdio MCP proxy (`mcp-stdio.mjs`,
+  for sessions whose environment did not load the `.envrc`) and example
+  settings and MCP config through which Claude Code sessions read the
+  Cofferdam deployment.
 - `lockkeeper.config.ts` — the per-organisation configuration (projects,
   merge mode, thresholds, allowlist, and `advise` for the Cofferdam
   deployment: owner, excluded repositories, the sensitive-path list,

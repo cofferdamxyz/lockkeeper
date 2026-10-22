@@ -216,12 +216,19 @@ behind Cloudflare Access:
 | `POST /mcp` | The MCP server (Streamable HTTP, stateless): `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight` |
 
 Claude Code reaches it with a Cloudflare Access service token:
-`claude-code/mcp.example.json` (the MCP server) and
+`claude-code/mcp.example.json` (the MCP server over HTTP) and
 `claude-code/settings.example.json` with `claude-code/hooks/lockkeeper.mjs`
 (the brief at session start, the check before `git commit` and `git push`).
 Set `LOCKKEEPER_URL`, `LOCKKEEPER_ACCESS_CLIENT_ID`,
 `LOCKKEEPER_ACCESS_CLIENT_SECRET` and `LOCKKEEPER_HOOK` (the hook's path);
 without them the hook says nothing and exits 0.
+
+Where no shell loaded those variables, as in a Claude desktop-app session,
+`claude-code/mcp-stdio.mjs` is a stdio MCP server that forwards to `/mcp`:
+register it as a stdio server through a wrapper that runs it under
+`direnv exec <workspace>`, and the token is read from the workspace `.envrc`
+at start instead of being written into a settings file. The same wrapper can
+run the hooks.
 
 ```bash
 # once, from the Mac (the founder): the GitHub App, then
