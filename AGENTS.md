@@ -6,6 +6,16 @@ source of truth for behaviour; `README.md` for running it; `DEMO.md` for
 the recorded demo. Change the design document in the same commit as the
 behaviour it describes.
 
+## Deployments
+
+The demo (`lockkeeper-demo.cofferdam.xyz`) runs everything below. The
+Cofferdam deployment is proposed as advice only (Cofferdam workspace
+decision 0053; `DESIGN.md` §12–§13): it keeps the index, Clef and the
+decision ledger over GitHub, adds polling, claims and an MCP server for
+Claude Code, and never runs the sandbox, the outbound gateway, the merge
+sandbox or the dashboard. Code for it must not make Lockkeeper launch
+agents or merge into a Cofferdam repository.
+
 ## Layout
 
 - `worker/` — the Lockkeeper Worker (Hono): API, task ledger (D1), the

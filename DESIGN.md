@@ -466,42 +466,73 @@ agent (a conflict becomes `needs_review`); the fifth task; the live tail
 
 ## 12. What Cofferdam keeps
 
-- The delegated agent loop of `DEVELOPMENT_SETUP.md` §7.2: the same
-  Worker with the `cofferdam-dev` namespace, mirrors of the product
-  repositories, and pull-request merge mode.
-- The Clef client, request builder, decision ledger and calibration loop,
-  which are the finalist decision pass of `COFFERDAM_ENGINE.md` E1/E8 with
-  a different state.
-- The index pattern, which is the OS's rebuildable vector layer over
+Re-checked on 2026-10-22 against the company loop (Cofferdam workspace
+decision 0053, proposed, which amends decisions 0006 and 0008; reasoning in
+the workspace `docs/runbooks/company-loops.md`). Claude Code cloud sessions,
+Projects threads and routines are Cofferdam's delegated executor, so
+Lockkeeper does not run agents for Cofferdam. It keeps the parts GitHub
+lacks:
+
+- **The index**, re-pointed at GitHub: what is in flight near these paths,
+  including the first hour before a branch is pushed, through claims with a
+  time to live. Overlap stays cosine plus Jaccard of paths.
+- **The Clef client, request builder, decision ledger and calibration loop**
+  as advice: which change lands next, may it go unattended, how risky. The
+  calibration target is what the founder actually landed, which is the
+  number that could later unlock fast-forward landing under a bypass
+  identity. These remain the finalist decision pass of the workspace
+  `docs/product/engine.md` (E1/E8) with a different state.
+- **A sensitive-path list** (`cofferdam-api/src/auth/**`, `base-contracts/**`,
+  every `wrangler.jsonc`, the OS `deployment.jsonc`): a pull request touching
+  one is never unattended-eligible and gets a `security` label suggestion.
+- **The index pattern**, which is the OS's rebuildable vector layer over
   commits and decisions from decision 0006.
-- The dashboard, which becomes the engine's "what the matcher sees"
-  transparency screen (`WORK_WALLET_DESIGN.md` §17) and the OS's view over
-  its vector layer: the same projection, panel and timeline over CVs,
-  listings and decisions instead of files and agents.
+
+The dashboard stays with the demo. Its scene may still become the engine's
+"what the matcher sees" transparency screen; for Cofferdam's development the
+Development Tracker's Present column is the screen.
 
 ## 13. Deployment model
 
 Lockkeeper is self-hosted, one deployment per organisation, inside that
 organisation's own Cloudflare account: the same posture as the Cloudflare
-OS wrapper. Code, forks, tokens, agent output, the Anthropic key on the
-gateway and the decision ledger never leave the account, billing stays on
-the organisation's plan, and Cloudflare Access decides who may look and who
+OS wrapper. Code, tokens, agent output, the Anthropic key on the gateway
+and the decision ledger never leave the account, billing stays on the
+organisation's plan, and Cloudflare Access decides who may look and who
 may approve. It is not a multi-tenant service.
 
 **Two deployments for Cofferdam.**
 
 | Deployment | Hostname | Purpose |
 |---|---|---|
-| Demo | `lockkeeper-demo.cofferdam.xyz` | The public showcase: `sample-api`, the four goals, the video. Behind `DASHBOARD_TOKEN`. Torn down after the launch, or kept as the live demo linked from the README |
-| Cofferdam | `lockkeeper.cofferdam.xyz` | The delegated agent loop of `DEVELOPMENT_SETUP.md` §7.2 over the product repositories, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team, namespace `cofferdam-dev` |
+| Demo | `lockkeeper-demo.cofferdam.xyz` | The public showcase: `sample-api`, the four goals, the video, the full runner (forks, sandboxes, outbound gateway, merge sandbox) and the 3D dashboard. Behind `DASHBOARD_TOKEN` |
+| Cofferdam (proposed, decision 0053) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
 
-**One deployment, many projects.** The `projects` table holds one project
-repository per project, each with its own map basis, decision log and
-conventions file; the dashboard switches between them. For Cofferdam the
-projects are `cofferdam-api`, `cofferdam-attester`, `cofferdam-sdk`,
-`base-contracts` and `cofferdam-app`. Sandboxes run Linux, so they can
-test and lint the app but not build it for iOS; app tasks arrive as pull
-requests that the Mac builds.
+**The Cofferdam deployment, in build order** (about four to five days of
+agent time; the first step is usable alone):
+
+1. **Poll-based index and in-flight endpoint with claims.** A cron reads
+   GitHub every few minutes (branches, open pull requests, changed paths,
+   CI comments): no public ingress and no webhook secret. Identity: a
+   GitHub App with metadata and contents read and pull-request write (for
+   comments), a trust-boundary item; whether to create it now or use the
+   OS bot's token for the first weeks is the founder's call (workspace
+   OD-14).
+2. **MCP server and Claude Code hooks.** An MCP server on the Worker behind
+   Access with a service token serves Claude Code's three touchpoints: the
+   brief and a claim at session start, a hook before commit and push that
+   prints what moved into context, nothing after the push. Main always
+   wins, branches always rebase, every push asks first; awareness is a fact
+   a session reads, never a lock it takes. A claude.ai connector for
+   people's Duets (Access as the OIDC provider in front of the same server)
+   waits until a second person asks.
+3. **The advising Workflow.** Clef over the open candidates; one comment per
+   candidate pull request (risk, unattended-eligible or not, the evidence)
+   and an ordered landing list. Clef returns choices and probabilities, not
+   prose. Nothing is merged or opened by Lockkeeper.
+4. **An OS gatekeeper over Lockkeeper** so the Development Tracker's In
+   flight list renders the branch line, overlap chips, claims and the
+   landing order.
 
 **What an organisation customises** (`lockkeeper.config.ts` at the
 repository root, typed and non-secret, in the spirit of the OS wrapper's
@@ -511,7 +542,10 @@ repository root, typed and non-secret, in the spirit of the OS wrapper's
   conventions file, test command, sandbox image variant (node and yarn,
   pnpm, Foundry for contracts);
 - merge mode per project: `mirror` (the demo: merge into Artifacts `main`
-  and push it to GitHub) or `pull-request` (Cofferdam: the merge sandbox
+  and push it to GitHub), `advise` (Cofferdam, proposed in decision 0053:
+  no runner and no merge; the index polls GitHub, Clef's answers become
+  comments and a landing order, a person lands), or `pull-request` (a
+  runner deployment that lands on GitHub: the merge sandbox
   pushes `lockkeeper/<task>` to GitHub and opens a pull request through a
   GitHub App; GitHub CI and a human merge there; the mirror brings `main`
   back and the index updates). In pull-request mode Clef still orders the
@@ -521,6 +555,8 @@ repository root, typed and non-secret, in the spirit of the OS wrapper's
   model, per-task spend cap);
 - the sandboxes' outbound allowlist (gateway, Artifacts host, package
   registries the projects need);
+- the sensitive-path list (globs a pull request may never touch and still
+  be unattended-eligible);
 - access: `token` for a demo, `access` with the organisation's team and the
   approver group, so every approval in the ledger carries an identity.
 
@@ -530,15 +566,16 @@ deploys it with
 `npm create cloudflare@latest -- --template cofferdamxyz/lockkeeper`,
 edits `lockkeeper.config.ts`, sets the secrets and runs `pnpm deploy`.
 
-**Mirrors.** Public GitHub repositories enter Artifacts with `import`
+**Mirrors** (the runner's deployments only, not Cofferdam's advisory one).
+Public GitHub repositories enter Artifacts with `import`
 (public HTTPS only); private ones use the GitHub Actions push mirror of
-`DEVELOPMENT_SETUP.md` §5.1. Both land in the organisation's namespace and
+the workspace `docs/runbooks/development-setup.md` (Cofferdam OS seams, Context mirror). Both land in the organisation's namespace and
 become the project repositories the agents fork.
 
-**Cofferdam OS.** The Cofferdam deployment later gains a custom gatekeeper
-so Control Center agents can read the dashboard state and launch tasks
-with approval, which is how the OS becomes the place where work is asked
-for and Lockkeeper the place where it is done.
+**Cofferdam OS.** The Cofferdam deployment gains a gatekeeper so OS
+gadgets can read the in-flight view and the landing order. It never
+launches tasks: the OS proposes, Claude Code executes, and Lockkeeper
+advises.
 
 ## 14. Risks and unknowns
 
@@ -563,6 +600,11 @@ for and Lockkeeper the place where it is done.
 
 ## Change log
 
+- 2026-10-22: §12 and §13 rewritten for Cofferdam workspace decision 0053
+  (proposed): the Cofferdam deployment keeps the index, Clef and the
+  decision ledger as advice over GitHub (polling, claims, an MCP server for
+  Claude Code, a GitHub App identity, headless) and drops the runner; the
+  demo keeps everything.
 - 2026-10-11 (night): the session view's map, diff and decision moved
   from a side panel into tabs on the header edge beside activity, one
   section at a time at every width.
