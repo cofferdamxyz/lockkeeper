@@ -9,8 +9,8 @@ behaviour it describes.
 ## Deployments
 
 The demo (`lockkeeper-demo.cofferdam.xyz`) runs everything below. The
-Cofferdam deployment is proposed as advice only (Cofferdam workspace
-decision 0053; `DESIGN.md` §12–§13): it keeps the index, Clef and the
+Cofferdam deployment is advice only and is built next (Cofferdam
+workspace decision 0053, accepted 2026-10-22; `DESIGN.md` §12–§13): it keeps the index, Clef and the
 decision ledger over GitHub, adds polling, claims and an MCP server for
 Claude Code, and never runs the sandbox, the outbound gateway, the merge
 sandbox or the dashboard. Code for it must not make Lockkeeper launch

@@ -467,7 +467,7 @@ agent (a conflict becomes `needs_review`); the fifth task; the live tail
 ## 12. What Cofferdam keeps
 
 Re-checked on 2026-10-22 against the company loop (Cofferdam workspace
-decision 0053, proposed, which amends decisions 0006 and 0008; reasoning in
+decision 0053, accepted 2026-10-22, which amends decisions 0006 and 0008; reasoning in
 the workspace `docs/runbooks/company-loops.md`). Claude Code cloud sessions,
 Projects threads and routines are Cofferdam's delegated executor, so
 Lockkeeper does not run agents for Cofferdam. It keeps the parts GitHub
@@ -506,7 +506,7 @@ may approve. It is not a multi-tenant service.
 | Deployment | Hostname | Purpose |
 |---|---|---|
 | Demo | `lockkeeper-demo.cofferdam.xyz` | The public showcase: `sample-api`, the four goals, the video, the full runner (forks, sandboxes, outbound gateway, merge sandbox) and the 3D dashboard. Behind `DASHBOARD_TOKEN` |
-| Cofferdam (proposed, decision 0053) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
+| Cofferdam (decision 0053, built next) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
 
 **The Cofferdam deployment, in build order** (about four to five days of
 agent time; the first step is usable alone):
@@ -515,9 +515,8 @@ agent time; the first step is usable alone):
    GitHub every few minutes (branches, open pull requests, changed paths,
    CI comments): no public ingress and no webhook secret. Identity: a
    GitHub App with metadata and contents read and pull-request write (for
-   comments), a trust-boundary item; whether to create it now or use the
-   OS bot's token for the first weeks is the founder's call (workspace
-   OD-14).
+   comments), a trust-boundary item: Lockkeeper's own App, created now,
+   never the OS bot's token (the founder, workspace OD-14).
 2. **MCP server and Claude Code hooks.** An MCP server on the Worker behind
    Access with a service token serves Claude Code's three touchpoints: the
    brief and a claim at session start, a hook before commit and push that
@@ -542,7 +541,7 @@ repository root, typed and non-secret, in the spirit of the OS wrapper's
   conventions file, test command, sandbox image variant (node and yarn,
   pnpm, Foundry for contracts);
 - merge mode per project: `mirror` (the demo: merge into Artifacts `main`
-  and push it to GitHub), `advise` (Cofferdam, proposed in decision 0053:
+  and push it to GitHub), `advise` (Cofferdam, decision 0053:
   no runner and no merge; the index polls GitHub, Clef's answers become
   comments and a landing order, a person lands), or `pull-request` (a
   runner deployment that lands on GitHub: the merge sandbox
@@ -601,7 +600,7 @@ advises.
 ## Change log
 
 - 2026-10-22: §12 and §13 rewritten for Cofferdam workspace decision 0053
-  (proposed): the Cofferdam deployment keeps the index, Clef and the
+  (accepted the same day; Lockkeeper's own GitHub App, built next): the Cofferdam deployment keeps the index, Clef and the
   decision ledger as advice over GitHub (polling, claims, an MCP server for
   Claude Code, a GitHub App identity, headless) and drops the runner; the
   demo keeps everything.
