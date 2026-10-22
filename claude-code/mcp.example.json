@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "lockkeeper": {
+      "type": "http",
+      "url": "${LOCKKEEPER_URL:-https://lockkeeper.cofferdam.xyz}/mcp",
+      "headers": {
+        "CF-Access-Client-Id": "${LOCKKEEPER_ACCESS_CLIENT_ID}",
+        "CF-Access-Client-Secret": "${LOCKKEEPER_ACCESS_CLIENT_SECRET}"
+      }
+    }
+  }
+}

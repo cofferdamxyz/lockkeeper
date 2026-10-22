@@ -8,13 +8,18 @@ behaviour it describes.
 
 ## Deployments
 
-The demo (`lockkeeper-demo.cofferdam.xyz`) runs everything below. The
-Cofferdam deployment is advice only and is built next (Cofferdam
-workspace decision 0053, accepted 2026-10-22; `DESIGN.md` §12–§13): it keeps the index, Clef and the
-decision ledger over GitHub, adds polling, claims and an MCP server for
-Claude Code, and never runs the sandbox, the outbound gateway, the merge
-sandbox or the dashboard. Code for it must not make Lockkeeper launch
-agents or merge into a Cofferdam repository.
+The demo (`lockkeeper-demo.cofferdam.xyz`, `worker/wrangler.jsonc`) runs
+everything below. The Cofferdam deployment (`lockkeeper.cofferdam.xyz`,
+`worker/wrangler.cofferdam.jsonc`, entry `worker/src/advise/index.ts`) is
+advice only (Cofferdam workspace decision 0053, accepted 2026-10-22;
+`DESIGN.md` §12–§13): it polls GitHub through Lockkeeper's own GitHub App,
+keeps the index, claims and (later) Clef's advice, and serves an HTTP API
+and an MCP server behind Cloudflare Access. It never runs the sandbox, the
+outbound gateway, the merge sandbox or the dashboard. Code under
+`worker/src/advise/` must not import the runner (sandbox, Artifacts,
+outbound, Workflow, tasks, queue) and must not write to GitHub beyond
+minting its installation token until step 3 adds comments;
+`worker/test/advise-guard.test.ts` enforces both.
 
 ## Layout
 
@@ -26,8 +31,16 @@ agents or merge into a Cofferdam repository.
   (pure, tested); `components/City.tsx` only draws it.
 - `sample-api/` — the demo project agents work on: a small Hono Worker
   with a vitest suite, pushed to the project repository in Artifacts.
+- `worker/src/advise/` — the Cofferdam advisory deployment: the GitHub App
+  client, the poller, claims, the in-flight answer and the brief, Access
+  verification, the MCP server. Its D1 migrations are
+  `worker/migrations-cofferdam/`.
+- `claude-code/` — the hook script and example settings and MCP config
+  through which Claude Code sessions read the Cofferdam deployment.
 - `lockkeeper.config.ts` — the per-organisation configuration (projects,
-  merge mode, thresholds, allowlist). Secrets never live here.
+  merge mode, thresholds, allowlist, and `advise` for the Cofferdam
+  deployment: owner, excluded repositories, the sensitive-path list,
+  claim times). Secrets never live here.
 
 ## Conventions
 
@@ -37,13 +50,19 @@ agents or merge into a Cofferdam repository.
   product name and, in the dashboard, the merge queue itself (the chamber
   on the column and the lock panel).
 - Secrets go through `wrangler secret put` on `worker/`:
-  `AI_GATEWAY_TOKEN`, `DASHBOARD_TOKEN`, optional `GITHUB_DEPLOY_KEY`.
+  `AI_GATEWAY_TOKEN`, `DASHBOARD_TOKEN`, optional `GITHUB_DEPLOY_KEY`; for
+  the Cofferdam deployment (`-c wrangler.cofferdam.jsonc`) only
+  `GITHUB_APP_PRIVATE_KEY`. The Access service token lives with the
+  Claude Code sessions that use it, never in the Worker.
 - Agent sandboxes start with `enableInternet: false`; every outbound request
   passes through `worker/src/outbound.ts`, which allows three hosts and
   injects the gateway token. Artifacts tokens are held by the Worker, never
   passed to an agent process.
-- Tests: `pnpm test` (vitest with the Workers pool in `worker/`, plain
-  vitest in `sample-api/`). Types: `pnpm check`.
+- Tests: `pnpm test` (plain vitest for the demo's pure modules and the
+  guard, the Workers pool over Miniflare for the Cofferdam deployment
+  (`worker/vitest.cofferdam.config.ts`, faked GitHub and Access, no
+  secrets), plain vitest in `sample-api/`, `node --test` for the hook).
+  Types: `pnpm check`. Deploys are the founder's, from the Mac.
 - Commits are signed off (`git commit -s`) with
-  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` when Claude
-  wrote the change.
+  `Co-Authored-By: Claude <model> <noreply@anthropic.com>` naming the model
+  that wrote the change, when Claude wrote it.

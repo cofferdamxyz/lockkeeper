@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [{ "type": "command", "command": "node \"$LOCKKEEPER_HOOK\" session-start", "timeout": 15 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "node \"$LOCKKEEPER_HOOK\" pre-tool", "timeout": 10 }]
+      }
+    ]
+  }
+}

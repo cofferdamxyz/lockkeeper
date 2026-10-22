@@ -195,6 +195,48 @@ pnpm --filter dashboard build
 node dashboard/dev-proxy.mjs --upstream https://<worker>.workers.dev --token-file ./secrets.env --port 8788
 ```
 
+## The Cofferdam deployment (advice only)
+
+A second Worker from the same code, `worker/wrangler.cofferdam.jsonc`
+(`lockkeeper-cofferdam`, `lockkeeper.cofferdam.xyz`), for Cofferdam's own
+development (workspace decision 0053, `DESIGN.md` §12–§13). It runs no
+agent and merges nothing: its entry point, `worker/src/advise/`, imports
+none of the runner, and `worker/test/advise-guard.test.ts` fails if it ever
+does. It reads GitHub every five minutes through Lockkeeper's own GitHub
+App, keeps the index and claims in its own D1 and Vectorize, and answers
+behind Cloudflare Access:
+
+| Route | What it answers |
+|---|---|
+| `GET /v1/brief?repo=&paths=&goal=&branch=` | The brief, as text: in flight near these paths, what landed recently, sensitive paths |
+| `GET /v1/inflight?…` | The same as JSON |
+| `POST /v1/check` `{repo, base, paths, branch}` | Before a commit or push: what moved on the default branch since `base` (read live), which files collide, other work on them |
+| `POST /v1/claims` `{repo, paths, goal, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
+| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's report |
+| `POST /mcp` | The MCP server (Streamable HTTP, stateless): `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight` |
+
+Claude Code reaches it with a Cloudflare Access service token:
+`claude-code/mcp.example.json` (the MCP server) and
+`claude-code/settings.example.json` with `claude-code/hooks/lockkeeper.mjs`
+(the brief at session start, the check before `git commit` and `git push`).
+Set `LOCKKEEPER_URL`, `LOCKKEEPER_ACCESS_CLIENT_ID`,
+`LOCKKEEPER_ACCESS_CLIENT_SECRET` and `LOCKKEEPER_HOOK` (the hook's path);
+without them the hook says nothing and exits 0.
+
+```bash
+# once, from the Mac (the founder): the GitHub App, then
+wrangler d1 create lockkeeper-cofferdam          # paste the id into wrangler.cofferdam.jsonc
+wrangler vectorize create lockkeeper-cofferdam --dimensions=1024 --metric=cosine
+wrangler vectorize create-metadata-index lockkeeper-cofferdam --property-name=repo --type=string
+pnpm --filter worker db:migrate:cofferdam
+wrangler secret put GITHUB_APP_PRIVATE_KEY -c worker/wrangler.cofferdam.jsonc < app-key.pem
+pnpm deploy:cofferdam
+# local: pnpm --filter worker dev:cofferdam (Access skipped with ENVIRONMENT=development)
+```
+
+Tests: `pnpm --filter worker test` runs them in the Workers pool against
+Miniflare's D1 with a faked GitHub and a faked Access team, with no secret.
+
 ## The demo
 
 `DEMO.md` is the runbook: four goals on the sample project, two of them
@@ -210,13 +252,16 @@ In the order it will be built.
 1. **Claims before commits.** The files an agent reads or opens draw
    scaffolding on the floor in its colour, so two agents heading for the
    same file is visible before either has committed. The brief then
-   carries the claims as well as the commits.
+   carries the claims as well as the commits. (The Cofferdam deployment
+   has claims over GitHub since 2026-10-22; the demo's map does not yet.)
 2. **The map at scale.** Level of detail for repositories with hundreds
    of files, a label budget, and three canonical cameras: perspective,
    straight down for collisions, side-on for sequence.
 3. **Agents ask the lock.** A tool the agent can call before it edits:
    who is on this file, what merged since my base, what the lock would
-   decide. The same questions the map answers, in the agent's loop.
+   decide. The same questions the map answers, in the agent's loop. (Built
+   for the Cofferdam deployment as its MCP server, without the lock's
+   decision, which is step 3 of `DESIGN.md` §13.)
 4. **Change sets across dependent repositories.** One goal that spans
    repositories spawns a task per repository, the downstream sandbox
    installs the upstream fork as a dependency through the gateway's

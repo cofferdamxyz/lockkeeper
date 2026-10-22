@@ -484,7 +484,13 @@ lacks:
   `docs/product/engine.md` (E1/E8) with a different state.
 - **A sensitive-path list** (`cofferdam-api/src/auth/**`, `base-contracts/**`,
   every `wrangler.jsonc`, the OS `deployment.jsonc`): a pull request touching
-  one is never unattended-eligible and gets a `security` label suggestion.
+  one is never unattended-eligible and gets a `security` label suggestion. The list is
+  `advise.sensitive` in `lockkeeper.config.ts`; the brief and the check
+  name the sensitive paths from step 1, the label suggestion and the
+  eligibility verdict come with step 3's comments. Open: `cofferdam-api` has
+  no `src/auth/` today (csa1 and the authority checks live in
+  `src/services/sessionAttestation.ts` and `authorityCheck.ts`), so the
+  decided glob matches nothing until the founder names the real paths.
 - **The index pattern**, which is the OS's rebuildable vector layer over
   commits and decisions from decision 0006.
 
@@ -506,18 +512,19 @@ may approve. It is not a multi-tenant service.
 | Deployment | Hostname | Purpose |
 |---|---|---|
 | Demo | `lockkeeper-demo.cofferdam.xyz` | The public showcase: `sample-api`, the four goals, the video, the full runner (forks, sandboxes, outbound gateway, merge sandbox) and the 3D dashboard. Behind `DASHBOARD_TOKEN` |
-| Cofferdam (decision 0053, built next) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
+| Cofferdam (decision 0053; steps 1 and 2 built 2026-10-22, not deployed) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
 
 **The Cofferdam deployment, in build order** (about four to five days of
 agent time; the first step is usable alone):
 
-1. **Poll-based index and in-flight endpoint with claims.** A cron reads
+1. **Poll-based index and in-flight endpoint with claims** (built
+   2026-10-22, below). A cron reads
    GitHub every few minutes (branches, open pull requests, changed paths,
    CI comments): no public ingress and no webhook secret. Identity: a
    GitHub App with metadata and contents read and pull-request write (for
    comments), a trust-boundary item: Lockkeeper's own App, created now,
    never the OS bot's token (the founder, workspace OD-14).
-2. **MCP server and Claude Code hooks.** An MCP server on the Worker behind
+2. **MCP server and Claude Code hooks** (built 2026-10-22, below). An MCP server on the Worker behind
    Access with a service token serves Claude Code's three touchpoints: the
    brief and a claim at session start, a hook before commit and push that
    prints what moved into context, nothing after the push. Main always
@@ -532,6 +539,74 @@ agent time; the first step is usable alone):
 4. **An OS gatekeeper over Lockkeeper** so the Development Tracker's In
    flight list renders the branch line, overlap chips, claims and the
    landing order.
+
+**What steps 1 and 2 built** (2026-10-22, not deployed yet). A second
+Worker from this repository, `worker/wrangler.cofferdam.jsonc`
+(`lockkeeper-cofferdam`), entry `worker/src/advise/index.ts`. Its bindings
+are D1 (`lockkeeper-cofferdam`, migrations in `worker/migrations-cofferdam/`),
+Vectorize (`lockkeeper-cofferdam`, 1024 dimensions, cosine, a metadata index
+on `repo`) and Workers AI for bge-m3; no container, Artifacts, Workflow,
+queue, Durable Object or assets, and `workers_dev` is off. A guard test
+fails if the entry ever imports the runner or the config binds it.
+
+- *Identity.* The App's numeric id is the var `GITHUB_APP_ID`, its private
+  key the secret `GITHUB_APP_PRIVATE_KEY`, in GitHub's own PKCS#1 form (the
+  Worker wraps it into PKCS#8 for WebCrypto). The Worker signs a nine-minute
+  App JWT, finds the installation on `cofferdamxyz`, and mints an
+  installation token, held in memory until five minutes before it expires.
+  The only write to GitHub is that token request.
+- *The poller.* A cron every five minutes, under a D1 lease so a manual
+  `POST /v1/poll` never overlaps it. It lists the repositories the
+  installation can see (the installation's repository selection is the
+  scope; `advise.exclude` drops some, archived ones are skipped), then per
+  repository the open pull requests; when the repository's `pushed_at`
+  moved, the branch list, one compare per branch whose head moved (files,
+  ahead, behind, merge base, commit first lines) and one compare when the
+  default branch moved, recorded in `main_moves` for "landed recently".
+  CI comes from the one comment per job that Cofferdam CI keeps on each pull
+  request (`<!-- cofferdam-ci:<job> -->`), because the App reads no check
+  runs: `pass` when every job reported on the head, `fail` when one failed,
+  `pending` while one still names an older head. A branch is re-embedded
+  when its head moves; deleted or fully merged branches leave the index.
+  Branches without a commit for `advise.staleDays` (14) and no pull request
+  drop out of "in flight".
+- *Claims.* `{repo, paths, goal, branch?, session?}` with a time to live
+  (60 minutes by default, 240 at most), owned by the Access identity that
+  took it (only it renews or releases), embedded like a branch, released
+  when its branch reaches GitHub, pruned a day after it ends. Paths may be
+  files, directories (`src/lib/`) or globs (`src/lib/**`); a claim without
+  paths covers the repository.
+- *The answer.* For a repository and a path set: every branch, pull request
+  and claim that shares a path (glob-aware), or whose cosine against the
+  query's text reaches `advise.nearCosine` (0.6), with the Jaccard of the
+  path sets beside it; the rest is counted, not listed. Plus what landed in
+  the last `advise.recentHours` (24) and which of the paths are on the
+  sensitive list. The check before a commit or push reads GitHub live (one
+  compare from the asker's merge base to the default branch), because the
+  base is the asker's and the poll may be five minutes old: what moved, which
+  of those files the asker also changed, and other work in flight on them.
+  Every answer ends on the principle: awareness, not a lock.
+- *Access.* The hostname sits behind Access (`cofferdam.cloudflareaccess.com`),
+  and the Worker verifies `Cf-Access-Jwt-Assertion` again against the team's
+  keys, the application's audience (var `ACCESS_AUD`) and the issuer. A
+  person is named by email, a service token by `service:<client id>`.
+  Without `ACCESS_AUD` every request is refused, except under
+  `ENVIRONMENT=development` for `wrangler dev`.
+- *MCP.* `POST /mcp`, Streamable HTTP without sessions or a server stream,
+  JSON responses: `brief`, `claim`, `renew_claim`, `release_claim`, `check`,
+  `in_flight`. A tool that fails answers as text with `isError`, so a session
+  carries on without Lockkeeper.
+- *Hooks.* `claude-code/hooks/lockkeeper.mjs`, one Node script with no
+  dependencies: on `SessionStart` it prints the brief for the repository (or,
+  in a cloud session that starts above the clones, for each clone with
+  something to say), with the changed paths of the current branch; on
+  `PreToolUse` for Bash, before `git commit` and `git push`, it computes the
+  merge base and changed paths locally, asks `/v1/check` and adds the answer
+  to the context. It never blocks: with `LOCKKEEPER_PUSH=hold-once` a push
+  whose files collide with what landed is held once with the reason and goes
+  through the second time. Unconfigured, unreachable or slow (four seconds),
+  it exits 0 with nothing. Nothing runs after a push. Example settings and
+  MCP config sit beside it.
 
 **What an organisation customises** (`lockkeeper.config.ts` at the
 repository root, typed and non-secret, in the spirit of the OS wrapper's
@@ -598,6 +673,13 @@ advises.
 
 
 ## Change log
+
+- 2026-10-22 (night): steps 1 and 2 of the Cofferdam deployment built
+  (§13, "What steps 1 and 2 built"): `worker/src/advise/`, its Wrangler
+  config, D1 schema, the GitHub App client, the poller, claims, the brief
+  and the check, Access verification, the MCP server and the Claude Code
+  hook. Not deployed; the founder creates the App, D1, Vectorize, Access
+  application and service token, and deploys from the Mac.
 
 - 2026-10-22: §12 and §13 rewritten for Cofferdam workspace decision 0053
   (accepted the same day; Lockkeeper's own GitHub App, built next): the Cofferdam deployment keeps the index, Clef and the
