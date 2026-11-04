@@ -13,3 +13,7 @@ allowBuilds:
 overrides:
   undici: ">=7.29.1"
   sharp: ">=0.35.5"
+  # @cloudflare/vitest-pool-workers 0.23.0 (the latest) pins zod 4.4.3, under
+  # GHSA alert 30 (fixed in 4.6.6); a test-only copy, moved to the 4.x the
+  # worker already uses (2026-11-04). Drop it once the pool depends on 4.6.6+.
+  "@cloudflare/vitest-pool-workers>zod": "^4.6.6"
