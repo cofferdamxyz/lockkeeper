@@ -9,11 +9,11 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "4.13.13"
+    "hono": "4.13.14"
   },
   "devDependencies": {
     "typescript": "5.9.3",
     "vitest": "^4.1.0",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.154.0"
   }
 }

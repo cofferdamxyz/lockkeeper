@@ -15,13 +15,13 @@
     "dev:cofferdam": "wrangler dev -c wrangler.cofferdam.jsonc --var ENVIRONMENT:development --test-scheduled"
   },
   "dependencies": {
-    "hono": "4.13.13",
-    "zod": "^4.6.6"
+    "hono": "4.13.14",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.23.0",
     "typescript": "5.9.3",
     "vitest": "^4.1.0",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.154.0"
   }
 }
