@@ -272,3 +272,146 @@ export async function takeLease(env: Pick<AdviseEnv, "DB">, key: string, nowMs: 
 export async function dropLease(env: Pick<AdviseEnv, "DB">, key: string): Promise<void> {
   await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(key).run();
 }
+
+// ---------- advice (step 3 of DESIGN.md §13) ----------
+
+export interface AdviceRow {
+  repo: string;
+  branch: string;
+  pr_number: number;
+  head_sha: string;
+  position: number;
+  next_p: number | null;
+  unattended: number | null;
+  risk: number | null;
+  eligible: boolean;
+  reasons: string[];
+  label: string | null;
+  issue: string | null;
+  body: string;
+  comment_id: number | null;
+  comment_hash: string | null;
+  decision_id: string | null;
+  decided_at: string;
+}
+
+const num = (v: unknown): number | null => (v == null ? null : Number(v));
+
+function toAdvice(r: Record<string, unknown>): AdviceRow {
+  return {
+    repo: String(r.repo),
+    branch: String(r.branch),
+    pr_number: Number(r.pr_number),
+    head_sha: String(r.head_sha),
+    position: Number(r.position),
+    next_p: num(r.next_p),
+    unattended: num(r.unattended),
+    risk: num(r.risk),
+    eligible: Boolean(r.eligible),
+    reasons: parse(r.reasons_json),
+    label: (r.label as string | null) ?? null,
+    issue: (r.issue as string | null) ?? null,
+    body: String(r.body),
+    comment_id: num(r.comment_id),
+    comment_hash: (r.comment_hash as string | null) ?? null,
+    decision_id: (r.decision_id as string | null) ?? null,
+    decided_at: String(r.decided_at),
+  };
+}
+
+export async function getAdvice(env: Pick<AdviseEnv, "DB">, repo?: string): Promise<AdviceRow[]> {
+  const stmt = repo
+    ? env.DB.prepare("SELECT * FROM advice WHERE repo = ? ORDER BY position").bind(repo)
+    : env.DB.prepare("SELECT * FROM advice ORDER BY repo, position");
+  const { results } = await stmt.all<Record<string, unknown>>();
+  return results.map(toAdvice);
+}
+
+/** Replaces a repository's advice in one batch; the comment a row already has stays with it. */
+export async function replaceAdvice(env: Pick<AdviseEnv, "DB">, repo: string, rows: AdviceRow[]): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM advice WHERE repo = ?").bind(repo),
+    ...rows.map((a) =>
+      env.DB.prepare(
+        `INSERT INTO advice (repo, branch, pr_number, head_sha, position, next_p, unattended, risk, eligible, reasons_json,
+           label, issue, body, comment_id, comment_hash, decision_id, decided_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        a.repo,
+        a.branch,
+        a.pr_number,
+        a.head_sha,
+        a.position,
+        a.next_p,
+        a.unattended,
+        a.risk,
+        a.eligible ? 1 : 0,
+        JSON.stringify(a.reasons),
+        a.label,
+        a.issue,
+        a.body,
+        a.comment_id,
+        a.comment_hash,
+        a.decision_id,
+        a.decided_at,
+      ),
+    ),
+  ]);
+}
+
+export async function setAdviceComment(env: Pick<AdviseEnv, "DB">, repo: string, branch: string, id: number, hash: string): Promise<void> {
+  await env.DB.prepare("UPDATE advice SET comment_id = ?, comment_hash = ? WHERE repo = ? AND branch = ?").bind(id, hash, repo, branch).run();
+}
+
+export async function addDecision(
+  env: Pick<AdviseEnv, "DB">,
+  d: { id: string; repo: string; candidates: string[]; request: unknown; response: unknown; error: string | null; at: string },
+): Promise<void> {
+  await env.DB.prepare("INSERT INTO decisions (id, repo, candidates_json, request_json, response_json, error, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(d.id, d.repo, JSON.stringify(d.candidates), d.request == null ? null : JSON.stringify(d.request), d.response == null ? null : JSON.stringify(d.response), d.error, d.at)
+    .run();
+}
+
+export async function pruneDecisions(env: Pick<AdviseEnv, "DB">, beforeIso: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM decisions WHERE at < ?").bind(beforeIso).run();
+}
+
+export interface Outcome {
+  repo: string;
+  pr_number: number;
+  head_sha: string;
+  position: number;
+  candidates: number;
+  unattended: number | null;
+  risk: number | null;
+  eligible: boolean;
+  outcome: "landed" | "closed" | "unknown";
+  at: string;
+}
+
+export async function addOutcome(env: Pick<AdviseEnv, "DB">, o: Outcome): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO outcomes (repo, pr_number, head_sha, position, candidates, unattended, risk, eligible, outcome, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(o.repo, o.pr_number, o.head_sha, o.position, o.candidates, o.unattended, o.risk, o.eligible ? 1 : 0, o.outcome, o.at)
+    .run();
+}
+
+export async function getOutcomes(env: Pick<AdviseEnv, "DB">, repo?: string, limit = 200): Promise<Outcome[]> {
+  const stmt = repo
+    ? env.DB.prepare("SELECT * FROM outcomes WHERE repo = ? ORDER BY at DESC LIMIT ?").bind(repo, limit)
+    : env.DB.prepare("SELECT * FROM outcomes ORDER BY at DESC LIMIT ?").bind(limit);
+  const { results } = await stmt.all<Record<string, unknown>>();
+  return results.map((r) => ({
+    repo: String(r.repo),
+    pr_number: Number(r.pr_number),
+    head_sha: String(r.head_sha),
+    position: Number(r.position),
+    candidates: Number(r.candidates),
+    unattended: num(r.unattended),
+    risk: num(r.risk),
+    eligible: Boolean(r.eligible),
+    outcome: String(r.outcome) as Outcome["outcome"],
+    at: String(r.at),
+  }));
+}

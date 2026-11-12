@@ -37,6 +37,18 @@ export interface AdviseConfig {
   nearCosine: number;
   /** Window for "landed on main recently" in briefs. */
   recentHours: number;
+  /** Step 3 of DESIGN.md §13: Clef's advice on the open pull requests. */
+  advice: {
+    /** Write the advice as one comment per candidate pull request (needs pull-request write on the App). */
+    comment: boolean;
+    /** Hours to wait before trying comments again after GitHub refused one (a missing permission). */
+    retryHours: number;
+  };
+  /**
+   * How a branch names its issue: the dispatch routine pushes `claude/<issue>-<slug>`, and the
+   * issues live in one repository. A branch that does not match is bound to nothing.
+   */
+  issues: { repo: string; branch: string };
 }
 
 export interface LockkeeperConfig {
@@ -116,6 +128,8 @@ const config: LockkeeperConfig = {
     claims: { defaultMinutes: 60, maxMinutes: 240 },
     nearCosine: 0.6,
     recentHours: 24,
+    advice: { comment: true, retryHours: 6 },
+    issues: { repo: "cofferdam", branch: "^claude/(\\d+)-" },
   },
   agents: {
     model: "claude-sonnet-5-5",

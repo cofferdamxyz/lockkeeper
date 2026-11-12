@@ -2,6 +2,7 @@ import config, { type AdviseConfig } from "../../../lockkeeper.config";
 import { jaccard } from "../vectors";
 import type { AdviseEnv } from "./env";
 import { GitHub, type Fetch } from "./github";
+import { issueFromBranch } from "./issues";
 import { firstLine } from "./poll";
 import { sensitiveHits, sharedPaths } from "./paths";
 import { activeClaims, getBranches, getRepo, getSetting, recentMainMoves, type BranchRow, type ClaimRow, type MainMove } from "./store";
@@ -163,6 +164,8 @@ function nearLine(n: Near, now: Date): string {
     if (b.ci !== "none") facts.push(`CI ${b.ci}`);
     facts.push(`${b.ahead} ahead, ${b.behind} behind`, `last commit ${ago(b.last_commit_at, now)}${b.author ? ` by ${b.author}` : ""}`);
     if (b.sensitive.length) facts.push("touches sensitive paths");
+    const issue = issueFromBranch(b.name, config.advise);
+    if (issue) facts.push(`for ${issue.ref}`);
   } else if (n.claim) {
     const c = n.claim;
     facts.push(`claimed by ${c.session ? `${c.session} (${c.who})` : c.who}`, `expires ${until(c.expires_at, now)}`);
@@ -218,7 +221,7 @@ export const toJson = (f: InFlight) => ({
   ...f,
   near: f.near.map(({ branch, claim, ...n }) => ({
     ...n,
-    ...(branch ? { branch: { name: branch.name, head: branch.head_sha, ahead: branch.ahead, behind: branch.behind, files: branch.files, pr: branch.pr_number, prTitle: branch.pr_title, prUrl: branch.pr_url, draft: branch.pr_draft, ci: branch.ci, sensitive: branch.sensitive, lastCommitAt: branch.last_commit_at, author: branch.author } } : {}),
+    ...(branch ? { branch: { name: branch.name, head: branch.head_sha, ahead: branch.ahead, behind: branch.behind, files: branch.files, pr: branch.pr_number, prTitle: branch.pr_title, prUrl: branch.pr_url, draft: branch.pr_draft, ci: branch.ci, sensitive: branch.sensitive, lastCommitAt: branch.last_commit_at, author: branch.author, issue: issueFromBranch(branch.name, config.advise)?.ref ?? null } } : {}),
     ...(claim ? { claim: { id: claim.id, goal: claim.goal, paths: claim.paths, who: claim.who, session: claim.session, branch: claim.branch, expiresAt: claim.expires_at } } : {}),
   })),
 });

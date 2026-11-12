@@ -23,18 +23,26 @@ export interface FakeRepo {
   branches: Record<string, { base: string; commits: FakeCommit[] }>;
   pulls?: { number: number; title: string; branch: string; draft?: boolean }[];
   comments?: Record<number, CommentInfo[]>;
+  /** Pull requests that are no longer open: number → merged or not. */
+  closed?: Record<number, { merged: boolean }>;
 }
 
 export interface FakeGitHub {
   owner: string;
   repos: FakeRepo[];
   calls: string[];
+  /** Answer every comment write with this status (403: the App lacks the permission). */
+  refuseWrites?: number;
 }
 
+let commentIds = 9000;
+
 let counter = 0;
-export function commit(message: string, files: string[], date = "2026-10-22T01:00:00Z"): FakeCommit {
+/** An hour old by default: a fixed date would age past `advise.staleDays` and drop out of "in flight". */
+export function commit(message: string, files: string[], date = new Date(Date.now() - 3600_000).toISOString()): FakeCommit {
   counter++;
-  const sha = (counter.toString(16).padStart(8, "0") + "a".repeat(32)).slice(0, 40);
+  // The counter leads, so every commit has its own seven-character short SHA (CI names heads by it).
+  const sha = (counter.toString(16).padStart(7, "0") + "a".repeat(33)).slice(0, 40);
   return { sha, message, files, author: "CofferdamDev", date };
 }
 
@@ -102,7 +110,29 @@ export function fakeFetch(gh: FakeGitHub) {
       );
     }
     const cm = /^issues\/(\d+)\/comments$/.exec(rest);
+    if (cm && method === "POST") {
+      if (gh.refuseWrites) return json({ message: "Resource not accessible by integration" }, gh.refuseWrites);
+      const made: CommentInfo = { id: ++commentIds, body: JSON.parse(String(init?.body)).body, user: { type: "Bot" }, updated_at: "" };
+      ((repo.comments ??= {})[Number(cm[1])] ??= []).push(made);
+      return json({ id: made.id }, 201);
+    }
     if (cm) return json(repo.comments?.[Number(cm[1])] ?? []);
+    const edit = /^issues\/comments\/(\d+)$/.exec(rest);
+    if (edit && method === "PATCH") {
+      if (gh.refuseWrites) return json({ message: "Resource not accessible by integration" }, gh.refuseWrites);
+      const found = Object.values(repo.comments ?? {}).flat().find((c) => c.id === Number(edit[1]));
+      if (!found) return json({ message: "Not Found" }, 404);
+      found.body = JSON.parse(String(init?.body)).body;
+      return json({ id: found.id });
+    }
+    const one = /^pulls\/(\d+)$/.exec(rest);
+    if (one) {
+      const n = Number(one[1]);
+      if ((repo.pulls ?? []).some((pr) => pr.number === n)) return json({ state: "open", merged: false, merged_at: null });
+      const done = repo.closed?.[n];
+      if (!done) return json({ message: "Not Found" }, 404);
+      return json({ state: "closed", merged: done.merged, merged_at: done.merged ? "2026-11-11T00:00:00Z" : null });
+    }
     const cmp = /^compare\/(.+)\.\.\.(.+)$/.exec(rest);
     if (cmp) {
       const base = lineage(repo, decodeURIComponent(cmp[1]));
@@ -158,7 +188,7 @@ export async function testEnv(overrides: Partial<AdviseEnv> = {}): Promise<Advis
 }
 
 export async function resetDb(env: AdviseEnv): Promise<void> {
-  await env.DB.batch(["repos", "branches", "main_moves", "claims", "settings"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+  await env.DB.batch(["repos", "branches", "main_moves", "claims", "settings", "advice", "decisions", "outcomes"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   resetTokenCache();
   resetAccessKeys();
 }

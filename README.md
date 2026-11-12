@@ -203,8 +203,10 @@ development (workspace decision 0053, `DESIGN.md` §12–§13). It runs no
 agent and merges nothing: its entry point, `worker/src/advise/`, imports
 none of the runner, and `worker/test/advise-guard.test.ts` fails if it ever
 does. It reads GitHub every five minutes through Lockkeeper's own GitHub
-App, keeps the index and claims in its own D1 and Vectorize, and answers
-behind Cloudflare Access:
+App, keeps the index and claims in its own D1 and Vectorize, asks Clef about
+the open pull requests after each poll (the landing order, and one advice
+comment per pull request, its only write to GitHub), and answers behind
+Cloudflare Access:
 
 | Route | What it answers |
 |---|---|
@@ -212,8 +214,10 @@ behind Cloudflare Access:
 | `GET /v1/inflight?…` | The same as JSON |
 | `POST /v1/check` `{repo, base, paths, branch}` | Before a commit or push: what moved on the default branch since `base` (read live), which files collide, other work on them |
 | `POST /v1/claims` `{repo, paths, goal, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
-| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's report |
-| `POST /mcp` | The MCP server (Streamable HTTP, stateless): `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight` |
+| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's and the last advising pass's reports |
+| `GET /v1/advice?repo=` | The landing order per repository: each open pull request's position, CI, unattended-eligible verdict with its reasons, Clef's numbers, label suggestion and issue |
+| `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
+| `POST /mcp` | The MCP server (Streamable HTTP, stateless): `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight`, `landing_order` |
 
 Claude Code reaches it with a Cloudflare Access service token:
 `claude-code/mcp.example.json` (the MCP server over HTTP) and
@@ -238,6 +242,8 @@ wrangler vectorize create-metadata-index lockkeeper-cofferdam --property-name=re
 pnpm --filter worker db:migrate:cofferdam
 wrangler secret put GITHUB_APP_PRIVATE_KEY -c worker/wrangler.cofferdam.jsonc < app-key.pem
 pnpm deploy:cofferdam
+# step 3 (2026-11-11): the App needs Pull requests: Read and write for the advice comment;
+# apply 0002_advice.sql with db:migrate:cofferdam before deploying
 # local: pnpm --filter worker dev:cofferdam (Access skipped with ENVIRONMENT=development)
 ```
 
@@ -267,8 +273,8 @@ In the order it will be built.
 3. **Agents ask the lock.** A tool the agent can call before it edits:
    who is on this file, what merged since my base, what the lock would
    decide. The same questions the map answers, in the agent's loop. (Built
-   for the Cofferdam deployment as its MCP server, without the lock's
-   decision, which is step 3 of `DESIGN.md` §13.)
+   for the Cofferdam deployment as its MCP server; the lock's decision
+   followed as advice, step 3 of `DESIGN.md` §13, built 2026-11-11.)
 4. **Change sets across dependent repositories.** One goal that spans
    repositories spawns a task per repository, the downstream sandbox
    installs the upstream fork as a dependency through the gateway's

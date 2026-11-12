@@ -35,13 +35,37 @@ describe("the advisory deployment", () => {
     expect(cfg.main).toBe("src/advise/index.ts");
   });
 
-  it("makes no write call to GitHub", () => {
-    for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
+  it("writes to GitHub only its token request and the advice comment", () => {
+    // A tripwire on how a write is spelled here, not a proof: the client's `raw` is private, and
+    // review still reads every change to this directory (it is on the sensitive list).
+    for (const f of readdirSync(dir, { recursive: true }).map(String).filter((x) => x.endsWith(".ts") && !x.includes("test/"))) {
       const src = readFileSync(join(dir, f), "utf8");
-      // The only POST is the installation token; nothing PUTs, PATCHes or DELETEs on GitHub.
-      expect(src.match(/method: "(PUT|PATCH|DELETE)"/g) ?? [], f).toEqual([]);
-      const posts = src.match(/method: "POST"/g) ?? [];
-      expect(posts.length, f).toBe(f === "github.ts" ? 1 : 0);
+      // Nothing PUTs or DELETEs on GitHub. Outside the client nothing names a write method at all.
+      expect(src.match(/method:\s*["'`](PUT|DELETE)["'`]/gi) ?? [], f).toEqual([]);
+      if (f !== "github.ts") {
+        // No request leaves these files with a write method (the MCP server only checks its own).
+        expect(src.match(/method:\s*["'`](POST|PATCH)["'`]|\?\s*["'`]POST["'`]|["'`]PATCH["'`]/gi) ?? [], f).toEqual([]);
+        continue;
+      }
+      const writes = src.match(/"(POST|PATCH)"/g) ?? [];
+      // The client: the installation token (POST), and `writeComment`, which creates (POST) or
+      // edits (PATCH) one comment under /issues/. No other method reaches a write.
+      expect(writes.sort()).toEqual(['"PATCH"', '"POST"', '"POST"']);
+      const body = src.slice(src.indexOf("async writeComment("));
+      const end = body.indexOf("\n  }\n");
+      const writer = body.slice(0, end);
+      expect(writer.match(/"(POST|PATCH)"/g)?.sort()).toEqual(['"PATCH"', '"POST"']);
+      expect(writer).toContain("/issues/${pull}/comments");
+      expect(writer).toContain("/issues/comments/${id}");
+      expect(src.match(/writeComment\(/g)?.length).toBe(1);
+    }
+  });
+
+  it("calls the comment writer from the advising pass alone", () => {
+    for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts") && x !== "github.ts")) {
+      const src = readFileSync(join(dir, f), "utf8");
+      // Twice in `syncComments`: the write, and the same write anew when the comment was deleted.
+      expect((src.match(/\.writeComment\(/g) ?? []).length, f).toBe(f === "advice.ts" ? 2 : 0);
     }
   });
 });

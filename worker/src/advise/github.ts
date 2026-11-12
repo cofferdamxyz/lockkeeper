@@ -1,6 +1,7 @@
 /**
  * GitHub, read through Lockkeeper's own GitHub App (workspace decision 0053): metadata and
- * contents read, pull requests write (comments, from step 3 of DESIGN.md §13; nothing writes yet).
+ * contents read, pull requests write (step 3 of DESIGN.md §13: one advice comment per candidate
+ * pull request, created once and edited in place; nothing else is ever written).
  * The App's private key is a Wrangler secret; installation tokens live in memory for under an hour.
  */
 
@@ -116,6 +117,8 @@ export interface CompareInfo {
 }
 
 export interface CommentInfo {
+  /** Absent only in old fixtures; GitHub always sends it. */
+  id?: number;
   body: string;
   user: { type: string } | null;
   updated_at: string;
@@ -209,14 +212,39 @@ export class GitHub {
     return this.get<CompareInfo>(`/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=100`);
   }
 
-  comments(repo: string, issue: number): Promise<CommentInfo[]> {
-    return this.list<CommentInfo>(`/repos/${repo}/issues/${issue}/comments?per_page=100`, 1);
+  comments(repo: string, issue: number, maxPages = 1): Promise<CommentInfo[]> {
+    return this.list<CommentInfo>(`/repos/${repo}/issues/${issue}/comments?per_page=100`, maxPages);
+  }
+
+  /** One closed or open pull request: whether it merged. */
+  pull(repo: string, number: number): Promise<{ state: string; merged: boolean; merged_at: string | null }> {
+    return this.get(`/repos/${repo}/pulls/${number}`);
+  }
+
+  /**
+   * The only writes this deployment makes besides its token: the advice comment on a pull
+   * request, created once (`id` null) and edited in place afterwards.
+   */
+  async writeComment(repo: string, pull: number, id: number | null, body: string): Promise<number> {
+    const token = await this.installationToken();
+    const path = id === null ? `/repos/${repo}/issues/${pull}/comments` : `/repos/${repo}/issues/comments/${id}`;
+    const res = await this.raw(path, {
+      method: id === null ? "POST" : "PATCH",
+      token,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) throw new GitHubError(res.status, path, (await res.text()).slice(0, 300));
+    return ((await res.json()) as { id: number }).id;
   }
 }
 
 // ---------- CI, as the repositories report it ----------
 
 export type CiState = "pass" | "fail" | "pending" | "none";
+
+/** The first line of Lockkeeper's own advice comment (advice.ts). Never read as a CI report. */
+export const ADVICE_MARKER = "<!-- lockkeeper-advice -->";
 
 /**
  * Cofferdam CI posts one comment per job on a pull request (`<!-- cofferdam-ci:<job> -->`, then
@@ -229,7 +257,8 @@ export function ciFromComments(comments: CommentInfo[], headSha: string): CiStat
   let stale = false;
   let failed = false;
   for (const c of comments) {
-    if (c.user?.type !== "Bot" || !c.body.includes("<!-- cofferdam-ci:")) continue;
+    // Lockkeeper's own comment quotes file names from the pull request: it is never evidence of CI.
+    if (c.user?.type !== "Bot" || c.body.startsWith(ADVICE_MARKER) || !c.body.includes("<!-- cofferdam-ci:")) continue;
     const m = /### CI (✅ passed|❌ failed)[^\n]* on ([0-9a-f]{7})/.exec(c.body);
     if (!m) continue;
     if (m[2] !== sha7) {

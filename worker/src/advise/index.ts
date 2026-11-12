@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import config from "../../../lockkeeper.config";
 import { AccessError, verifyAccess, type Identity } from "./access";
+import { advise, landingOrder } from "./advice";
 import { ClaimError, createClaim, dropClaim, extendClaim, listClaims, repoName } from "./claims";
 import type { AdviseEnv } from "./env";
 import { briefText, check, checkText, inFlight, toJson } from "./inflight";
@@ -13,7 +14,7 @@ import { getSetting } from "./store";
 /**
  * Lockkeeper, the Cofferdam advisory deployment (`wrangler.cofferdam.jsonc`; DESIGN.md §12–§13,
  * workspace decision 0053). Headless: an HTTP API and an MCP server behind Cloudflare Access, and
- * a cron that polls GitHub. It imports none of the runner (sandbox, forks, outbound gateway,
+ * a cron that polls GitHub and then asks Clef about the open pull requests. It imports none of the runner (sandbox, forks, outbound gateway,
  * merge Workflow), so this Worker cannot launch an agent or merge into a repository.
  */
 
@@ -94,9 +95,23 @@ app.delete("/v1/claims/:id", async (c) => {
 
 app.post("/v1/poll", async (c) => c.json(await poll(c.env)));
 
+// Step 3: the landing order per repository, with each candidate's verdict and its issue.
+app.get("/v1/advice", async (c) => {
+  const repo = c.req.query("repo") ? repoName(c.req.query("repo"), config.advise.owner) : undefined;
+  return c.json({ repos: await landingOrder(c.env, repo) });
+});
+
+app.post("/v1/advise", async (c) => c.json(await advise(c.env, { force: c.req.query("force") === "1" })));
+
 app.get("/v1/status", async (c) => {
   const report = await getSetting(c.env, "poll_report");
-  return c.json({ who: c.get("who"), polledAt: await getSetting(c.env, "polled_at"), lastPoll: report ? JSON.parse(report) : null });
+  const advised = await getSetting(c.env, "advise_report");
+  return c.json({
+    who: c.get("who"),
+    polledAt: await getSetting(c.env, "polled_at"),
+    lastPoll: report ? JSON.parse(report) : null,
+    lastAdvice: advised ? JSON.parse(advised) : null,
+  });
 });
 
 app.all("/mcp", (c) => handleMcp(c.env, c.get("who"), c.req.raw));
@@ -107,12 +122,21 @@ export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: AdviseEnv, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      poll(env).then(
-        (r) => {
-          if (r.errors.length) console.warn("poll errors", r.errors.join("; "));
-        },
-        (err) => console.error("poll failed", err instanceof Error ? err.message : String(err)),
-      ),
+      poll(env)
+        .then(
+          (r) => {
+            if (r.errors.length) console.warn("poll errors", r.errors.join("; "));
+          },
+          (err) => console.error("poll failed", err instanceof Error ? err.message : String(err)),
+        )
+        // The advising pass reads what the poll just wrote; it asks Clef only where candidates moved.
+        .then(() => advise(env))
+        .then(
+          (r) => {
+            if (r.errors.length) console.warn("advise errors", r.errors.join("; "));
+          },
+          (err) => console.error("advise failed", err instanceof Error ? err.message : String(err)),
+        ),
     );
   },
 } satisfies ExportedHandler<AdviseEnv>;

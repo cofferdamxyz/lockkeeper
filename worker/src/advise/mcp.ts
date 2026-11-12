@@ -1,3 +1,4 @@
+import { landingOrder, landingText } from "./advice";
 import config from "../../../lockkeeper.config";
 import type { Identity } from "./access";
 import { ClaimError, createClaim, dropClaim, extendClaim, repoName } from "./claims";
@@ -14,7 +15,7 @@ import type { Fetch } from "./github";
  * Lockkeeper's own ledger; none launches an agent, opens a pull request or merges.
  */
 
-export const SERVER_INFO = { name: "lockkeeper", version: "0.2.0" };
+export const SERVER_INFO = { name: "lockkeeper", version: "0.3.0" };
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 const INSTRUCTIONS = [
@@ -83,6 +84,11 @@ export const TOOLS = [
     description: "Every branch and claim in flight, per repository (or one repository).",
     inputSchema: { type: "object", properties: { repo: repoProp } },
   },
+  {
+    name: "landing_order",
+    description: "The order in which the open pull requests should land, per repository (or one repository), with each one's CI, whether it is unattended-eligible and why not, its risk to the others, and the issue its branch names. Advice: a person lands.",
+    inputSchema: { type: "object", properties: { repo: repoProp } },
+  },
 ];
 
 type Json = Record<string, unknown>;
@@ -140,6 +146,8 @@ async function callTool(env: AdviseEnv, who: Identity, name: string, args: Json,
       }
       return text(lines.length ? lines.join("\n") : "Nothing in flight.");
     }
+    case "landing_order":
+      return text(landingText(await landingOrder(env, args.repo ? repoName(args.repo, owner) : undefined)));
     default:
       throw new RpcError(-32602, `unknown tool: ${name}`);
   }

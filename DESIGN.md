@@ -535,10 +535,11 @@ agent time; the first step is usable alone):
    a session reads, never a lock it takes. A claude.ai connector for
    people's Duets (Access as the OIDC provider in front of the same server)
    waits until a second person asks.
-3. **The advising Workflow.** Clef over the open candidates; one comment per
-   candidate pull request (risk, unattended-eligible or not, the evidence)
-   and an ordered landing list. Clef returns choices and probabilities, not
-   prose. Nothing is merged or opened by Lockkeeper.
+3. **The advising pass** (built 2026-11-11, below). Clef over the open
+   candidates; one comment per candidate pull request (risk,
+   unattended-eligible or not, the evidence) and an ordered landing list.
+   Clef returns choices and probabilities, not prose. Nothing is merged or
+   opened by Lockkeeper.
 4. **An OS gatekeeper over Lockkeeper** so the Development Tracker's In
    flight list renders the branch line, overlap chips, claims and the
    landing order.
@@ -621,6 +622,78 @@ fails if the entry ever imports the runner or the config binds it.
   unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs after a push. Example settings and
   MCP config sit beside it.
 
+**What step 3 built** (2026-11-11, not deployed yet). `worker/src/advise/advice.ts`,
+run by the cron right after the poll, not as a Workflow binding: this
+deployment binds no runner, and the pass is one request per repository.
+
+- *Candidates.* Per repository, the branches with an open pull request,
+  drafts included (delegated branches stay drafts until they land), oldest
+  first, at most `clef.maxCandidates` (20); past that the newest wait for a
+  later round, without advice. Each carries its overlap with
+  every other candidate (shared files, Jaccard of the path sets, cosine of
+  the bge-m3 vectors when Workers AI is bound) and the files the default
+  branch changed after its base.
+- *The question.* §6's three, over pull requests: `next` (a choice, when
+  there are two or more), and per candidate `unattended` (a noul) and `risk`
+  (a score on the four levels). The state names CI, the commits ahead and
+  behind, the sensitive paths, the issue and the last five moves of the
+  default branch. Everything a pull request chooses for itself (file names,
+  titles, commit messages) is cut to length, file names are reduced to a
+  plain path alphabet, and the state is bounded at 150,000 characters. A
+  repository is asked again only when its candidates moved (a head, CI, a
+  title, the default branch, a pull request opened or closed), and nothing
+  is embedded or asked before that check; after a failed or partial answer
+  it is asked again no sooner than thirty minutes later, and the order from
+  the rules stands meanwhile.
+- *The verdict.* The landing order is Clef's pick, then its probabilities;
+  what it did not rank follows the rules (green CI, least overlap, oldest).
+  A candidate is unattended-eligible only when nothing below holds: it
+  touches a sensitive path (which also suggests the `security` label); CI
+  did not pass on its head; it shares a file with another open pull
+  request; the default branch changed one of its files after its base, or it
+  is behind from a base older than the record of the default branch's moves
+  (fourteen days, twenty moves), so what changed under it is not known;
+  Clef's `unattended` is under `clef.unattended` (0.80) or its `risk` over
+  `clef.maxRisk` (1.0); Clef gave no answer. Eligible is a verdict to read:
+  nothing lands unattended in this deployment.
+- *The comment.* One per candidate, marked `<!-- lockkeeper-advice -->`:
+  the head it speaks for, the position, the verdict with every reason,
+  Clef's numbers, the label suggestion and the issue. It carries no
+  timestamp, so it is created once and edited in place only when its text
+  changes (written anew if someone deleted it); at most 40 writes a pass.
+  File names appear in it only through the same plain alphabet, so a name
+  cannot close its code span or write a line of its own, and the poller
+  never reads Lockkeeper's own comment as a CI report. These two calls
+  (`writeComment` in `github.ts`) are the deployment's only writes to GitHub
+  besides its token; the guard test is a tripwire on any other write
+  spelled in the directory, not a proof, and the directory stays on the
+  sensitive list. A refusal (the App
+  without pull-request write) pauses comments for `advise.advice.retryHours`
+  (6); the advice is kept either way, and `advise.advice.comment: false`
+  turns comments off.
+- *The issue.* A branch named `claude/<issue>-<slug>`, as the dispatch
+  routine pushes it, is bound to that issue in `advise.issues.repo`
+  (`cofferdam`) by its name alone: in the comment, the brief, the in-flight
+  answer and the landing order. Whoever can push a branch chooses that
+  name, so the binding says which issue a branch claims, not that the issue
+  asked for it.
+- *The ledger and calibration.* Every request and answer is a row in
+  `decisions` (kept 90 days). When a candidate leaves, `outcomes` records
+  what the advice said (position, how many were open, Clef's numbers, the
+  verdict) and whether the pull request landed, was closed, or is gone from
+  GitHub (`unknown`): the record against which the thresholds are later
+  checked. A pull request that cannot be read for a passing reason is read
+  again on the next pass.
+- *The answer.* `GET /v1/advice?repo=` and the MCP tool `landing_order`:
+  per repository, the order with each candidate's CI, verdict, reasons,
+  numbers, label and issue. `POST /v1/advise` runs a pass by hand
+  (`?force=1` asks again where nothing moved). This is what step 4's
+  gatekeeper reads.
+- *Deploying it.* The D1 migration `0002_advice.sql`, then the Worker; the
+  App needs **Pull requests: Read and write** on its installation (it was
+  created with it; an installation that lacks it is refused by GitHub and
+  comments pause, nothing else changes).
+
 **What an organisation customises** (`lockkeeper.config.ts` at the
 repository root, typed and non-secret, in the spirit of the OS wrapper's
 `deployment.jsonc`):
@@ -686,6 +759,16 @@ advises.
 
 
 ## Change log
+
+- 2026-11-11: step 3 of the Cofferdam deployment built (§13, "What step 3
+  built"): the advising pass after each poll, Clef's three questions over
+  the open pull requests of a repository, the landing order, the
+  unattended-eligible verdict with its reasons, one comment per candidate
+  pull request edited in place, the issue bound by the branch name, the
+  decision ledger and the outcomes table, `GET /v1/advice` and the MCP tool
+  `landing_order`. It runs in the cron, not as a Workflow binding. The
+  fixtures' commit dates became relative: three tests had started failing
+  once the fixed October dates aged past `advise.staleDays`. Not deployed.
 
 - 2026-10-22 (night): steps 1 and 2 of the Cofferdam deployment built
   (§13, "What steps 1 and 2 built"): `worker/src/advise/`, its Wrangler

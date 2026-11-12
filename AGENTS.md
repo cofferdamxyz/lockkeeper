@@ -13,13 +13,15 @@ everything below. The Cofferdam deployment (`lockkeeper.cofferdam.xyz`,
 `worker/wrangler.cofferdam.jsonc`, entry `worker/src/advise/index.ts`) is
 advice only (Cofferdam workspace decision 0053, accepted 2026-10-22;
 `DESIGN.md` §12–§13): it polls GitHub through Lockkeeper's own GitHub App,
-keeps the index, claims and (later) Clef's advice, and serves an HTTP API
-and an MCP server behind Cloudflare Access. It never runs the sandbox, the
-outbound gateway, the merge sandbox or the dashboard. Code under
-`worker/src/advise/` must not import the runner (sandbox, Artifacts,
-outbound, Workflow, tasks, queue) and must not write to GitHub beyond
-minting its installation token until step 3 adds comments;
-`worker/test/advise-guard.test.ts` enforces both.
+keeps the index, claims and Clef's advice on the open pull requests (the
+landing order and one comment per pull request, step 3, built 2026-11-11),
+and serves an HTTP API and an MCP server behind Cloudflare Access. It never
+runs the sandbox, the outbound gateway, the merge sandbox or the dashboard.
+Code under `worker/src/advise/` must not import the runner (sandbox,
+Artifacts, outbound, Workflow, tasks, queue) and writes to GitHub only its
+installation token request and the advice comment (`writeComment` in
+`github.ts`, called from `advice.ts` alone); it never merges, opens, labels
+or closes anything. `worker/test/advise-guard.test.ts` enforces all of it.
 
 ## Layout
 
@@ -32,7 +34,8 @@ minting its installation token until step 3 adds comments;
 - `sample-api/` — the demo project agents work on: a small Hono Worker
   with a vitest suite, pushed to the project repository in Artifacts.
 - `worker/src/advise/` — the Cofferdam advisory deployment: the GitHub App
-  client, the poller, claims, the in-flight answer and the brief, Access
+  client, the poller, claims, the in-flight answer and the brief, the
+  advising pass (`advice.ts`) and the issue binding (`issues.ts`), Access
   verification, the MCP server. Its D1 migrations are
   `worker/migrations-cofferdam/`.
 - `claude-code/` — the hook script, a stdio MCP proxy (`mcp-stdio.mjs`,
@@ -42,7 +45,8 @@ minting its installation token until step 3 adds comments;
 - `lockkeeper.config.ts` — the per-organisation configuration (projects,
   merge mode, thresholds, allowlist, and `advise` for the Cofferdam
   deployment: owner, excluded repositories, the sensitive-path list,
-  claim times). Secrets never live here.
+  claim times, whether advice is commented, how a branch names its issue).
+  Secrets never live here.
 
 ## Conventions
 
