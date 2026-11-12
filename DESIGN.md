@@ -542,7 +542,12 @@ agent time; the first step is usable alone):
    opened by Lockkeeper.
 4. **An OS gatekeeper over Lockkeeper** so the Development Tracker's In
    flight list renders the branch line, overlap chips, claims and the
-   landing order.
+   landing order. Lockkeeper's side is `GET /v1/present?repo=` (built
+   2026-11-11): per repository the branches in flight with their pull
+   request, CI, issue and the files each shares with the others, the live
+   claims and step 3's landing order, in one read. The gatekeeper itself is
+   `packages/lockkeeper-gatekeeper` in `cofferdam-os`, read-only, with its
+   own Access service token.
 
 **What steps 1 and 2 built** (2026-10-22, not deployed yet). A second
 Worker from this repository, `worker/wrangler.cofferdam.jsonc`
@@ -769,6 +774,7 @@ advises.
   `landing_order`. It runs in the cron, not as a Workflow binding. The
   fixtures' commit dates became relative: three tests had started failing
   once the fixed October dates aged past `advise.staleDays`. Not deployed.
+  The same day, `GET /v1/present` for step 4's gatekeeper.
 
 - 2026-10-22 (night): steps 1 and 2 of the Cofferdam deployment built
   (§13, "What steps 1 and 2 built"): `worker/src/advise/`, its Wrangler

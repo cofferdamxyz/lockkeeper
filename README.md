@@ -216,6 +216,7 @@ Cloudflare Access:
 | `POST /v1/claims` `{repo, paths, goal, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
 | `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's and the last advising pass's reports |
 | `GET /v1/advice?repo=` | The landing order per repository: each open pull request's position, CI, unattended-eligible verdict with its reasons, Clef's numbers, label suggestion and issue |
+| `GET /v1/present?repo=` | One read for the Development Tracker: branches in flight with pull request, CI, issue and overlap on each other, live claims, the landing order |
 | `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
 | `POST /mcp` | The MCP server (Streamable HTTP, stateless): `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight`, `landing_order` |
 

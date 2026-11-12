@@ -35,7 +35,8 @@ or closes anything. `worker/test/advise-guard.test.ts` enforces all of it.
   with a vitest suite, pushed to the project repository in Artifacts.
 - `worker/src/advise/` — the Cofferdam advisory deployment: the GitHub App
   client, the poller, claims, the in-flight answer and the brief, the
-  advising pass (`advice.ts`) and the issue binding (`issues.ts`), Access
+  advising pass (`advice.ts`), the issue binding (`issues.ts`) and the
+  one-read answer for the OS gatekeeper (`present.ts`), Access
   verification, the MCP server. Its D1 migrations are
   `worker/migrations-cofferdam/`.
 - `claude-code/` — the hook script, a stdio MCP proxy (`mcp-stdio.mjs`,

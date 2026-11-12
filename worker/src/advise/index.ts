@@ -9,6 +9,7 @@ import { briefText, check, checkText, inFlight, toJson } from "./inflight";
 import { handleMcp } from "./mcp";
 import { cleanPaths } from "./paths";
 import { poll } from "./poll";
+import { present } from "./present";
 import { getSetting } from "./store";
 
 /**
@@ -99,6 +100,12 @@ app.post("/v1/poll", async (c) => c.json(await poll(c.env)));
 app.get("/v1/advice", async (c) => {
   const repo = c.req.query("repo") ? repoName(c.req.query("repo"), config.advise.owner) : undefined;
   return c.json({ repos: await landingOrder(c.env, repo) });
+});
+
+// Step 4: one read for the Development Tracker's Present column (through the OS gatekeeper).
+app.get("/v1/present", async (c) => {
+  const repo = c.req.query("repo") ? repoName(c.req.query("repo"), config.advise.owner) : undefined;
+  return c.json(await present(c.env, repo));
 });
 
 app.post("/v1/advise", async (c) => c.json(await advise(c.env, { force: c.req.query("force") === "1" })));

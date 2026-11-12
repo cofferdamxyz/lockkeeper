@@ -282,6 +282,30 @@ describe("the advising pass", () => {
   });
 });
 
+describe("the present", () => {
+  beforeEach(async () => resetDb(await testEnv()));
+
+  it("answers branches with their overlap, claims and the landing order in one read", async () => {
+    const { present } = await import("../present");
+    const { createClaim } = await import("../claims");
+    const env = await testEnv();
+    const { gh } = world();
+    const fetcher = fakeFetch(gh);
+    await poll(env, { fetcher });
+    await advise(env, { fetcher, clef: good });
+    await createClaim(env, "hoff@cofferdam.xyz", { repo: "cofferdam-branding", paths: ["tokens/"], goal: "retune the dark surfaces" } as never);
+    const p = await present(env);
+    expect(p.repos).toHaveLength(1);
+    const r = p.repos[0];
+    expect(r.order.map((e) => e.pr)).toEqual([3, 4, 5]);
+    const four = r.branches.find((b) => b.name === "claude/29-merge-helper")!;
+    expect(four).toMatchObject({ issue: "cofferdamxyz/cofferdam#29", ci: "pass", pr: { number: 4, draft: true }, sensitive: false });
+    expect(four.overlaps).toEqual([{ with: "dependabot/github_actions/pins", shared: 1, files: ["scripts/build.mjs"] }]);
+    expect(r.claims).toMatchObject([{ goal: "retune the dark surfaces", who: "hoff@cofferdam.xyz" }]);
+    expect(p.advisedAt).not.toBeNull();
+  });
+});
+
 describe("the issue binding", () => {
   it("reads the issue from a dispatch branch and nothing from any other", () => {
     expect(issueFromBranch("claude/29-merge-helper", config.advise)).toEqual({ repo: "cofferdamxyz/cofferdam", number: 29, ref: "cofferdamxyz/cofferdam#29" });
