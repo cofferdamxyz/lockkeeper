@@ -627,7 +627,7 @@ fails if the entry ever imports the runner or the config binds it.
   unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs after a push. Example settings and
   MCP config sit beside it.
 
-**What step 3 built** (2026-11-11, not deployed yet). `worker/src/advise/advice.ts`,
+**What step 3 built** (2026-11-11, deployed 2026-11-13 with comments on). `worker/src/advise/advice.ts`,
 run by the cron right after the poll, not as a Workflow binding: this
 deployment binds no runner, and the pass is one request per repository.
 
