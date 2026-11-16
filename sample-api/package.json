@@ -9,7 +9,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "4.13.14"
+    "hono": "4.13.16"
   },
   "devDependencies": {
     "typescript": "5.9.3",

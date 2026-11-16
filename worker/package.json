@@ -15,7 +15,7 @@
     "dev:cofferdam": "wrangler dev -c wrangler.cofferdam.jsonc --var ENVIRONMENT:development --test-scheduled"
   },
   "dependencies": {
-    "hono": "4.13.14",
+    "hono": "4.13.16",
     "zod": "^4.6.7"
   },
   "devDependencies": {
