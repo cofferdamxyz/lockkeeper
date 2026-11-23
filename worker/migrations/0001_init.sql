@@ -1,117 +1,66 @@
--- Lockkeeper ledger. Everything here is rebuildable state about work in flight.
-CREATE TABLE IF NOT EXISTS projects (
-  id TEXT PRIMARY KEY,
-  repo TEXT NOT NULL,
-  remote TEXT,
-  default_branch TEXT NOT NULL DEFAULT 'main',
+-- Lockkeeper, the Cofferdam advisory deployment (DESIGN.md §12–§13, workspace decision 0053).
+-- Everything here is rebuildable from GitHub except claims, which live for hours at most.
+
+-- One row per repository the GitHub App can see.
+CREATE TABLE IF NOT EXISTS repos (
+  repo TEXT PRIMARY KEY,               -- owner/name
+  default_branch TEXT NOT NULL,
   head_sha TEXT,
-  basis_json TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  pushed_at TEXT,
+  polled_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS tasks (
+-- Branches ahead of the default branch: the work in flight.
+CREATE TABLE IF NOT EXISTS branches (
+  repo TEXT NOT NULL,
+  name TEXT NOT NULL,
+  head_sha TEXT NOT NULL,
+  base_sha TEXT,                       -- merge base with the default branch
+  ahead INTEGER NOT NULL DEFAULT 0,
+  behind INTEGER NOT NULL DEFAULT 0,
+  files_json TEXT NOT NULL DEFAULT '[]',
+  commits_json TEXT NOT NULL DEFAULT '[]',  -- first lines, newest last
+  author TEXT,
+  last_commit_at TEXT,
+  pr_number INTEGER,
+  pr_title TEXT,
+  pr_url TEXT,
+  pr_draft INTEGER,
+  ci TEXT NOT NULL DEFAULT 'none',     -- pass | fail | pending | none
+  sensitive_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (repo, name)
+);
+
+-- What moved into a default branch, poll to poll.
+CREATE TABLE IF NOT EXISTS main_moves (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  before_sha TEXT NOT NULL,
+  after_sha TEXT NOT NULL,
+  files_json TEXT NOT NULL,
+  commits_json TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS main_moves_repo_at ON main_moves (repo, at);
+
+-- Claims: "I am about to work here", for the window before a branch is pushed. Never a lock.
+CREATE TABLE IF NOT EXISTS claims (
   id TEXT PRIMARY KEY,
-  project TEXT NOT NULL REFERENCES projects(id),
+  repo TEXT NOT NULL,
+  paths_json TEXT NOT NULL,
   goal TEXT NOT NULL,
-  brief TEXT,
-  fork TEXT,
-  fork_remote TEXT,
-  status TEXT NOT NULL,
-  base_sha TEXT,
-  head_sha TEXT,
-  files_json TEXT,
-  diffstat TEXT,
-  diff TEXT,
-  commits_json TEXT,
-  tests_ok INTEGER,
-  summary TEXT,
-  events_tail TEXT,
-  error TEXT,
-  cost_usd REAL,
-  restarts INTEGER NOT NULL DEFAULT 0,
-  resolved INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-CREATE INDEX IF NOT EXISTS tasks_project_status ON tasks(project, status);
-
-CREATE TABLE IF NOT EXISTS pushes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT,
-  project TEXT,
-  repo TEXT NOT NULL,
-  ref TEXT NOT NULL,
-  before_sha TEXT,
-  after_sha TEXT,
-  commits_json TEXT,
-  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
-CREATE TABLE IF NOT EXISTS decisions (
-  id TEXT PRIMARY KEY,
-  project TEXT NOT NULL,
-  candidates_json TEXT NOT NULL,
-  request_json TEXT NOT NULL,
-  response_json TEXT,
-  chosen TEXT,
-  error TEXT,
-  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
-CREATE TABLE IF NOT EXISTS merges (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT NOT NULL,
-  project TEXT NOT NULL,
-  decision_id TEXT,
-  mode TEXT NOT NULL,
-  main_before TEXT,
-  main_after TEXT,
-  conflict INTEGER NOT NULL DEFAULT 0,
-  resolved_by TEXT,
-  approved_by TEXT,
-  output TEXT,
-  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT NOT NULL,
-  dedupe TEXT UNIQUE,
-  payload_json TEXT NOT NULL,
-  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
--- Projected coordinates for the dashboard: files and task revisions on one fixed basis.
-CREATE TABLE IF NOT EXISTS positions (
-  id TEXT PRIMARY KEY,
-  project TEXT NOT NULL,
-  kind TEXT NOT NULL,          -- 'file' | 'task'
-  label TEXT NOT NULL,
-  x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
-  meta_json TEXT,
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-CREATE INDEX IF NOT EXISTS positions_project ON positions(project, kind);
-
--- Short-lived Artifacts tokens the outbound gateway injects for a named sandbox.
-CREATE TABLE IF NOT EXISTS tokens (
-  sandbox TEXT NOT NULL,
-  repo TEXT NOT NULL,
-  token TEXT NOT NULL,
+  who TEXT NOT NULL,                   -- the Access identity (email or service token name)
+  session TEXT,                        -- a label the session gives itself
+  branch TEXT,
+  created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
-  PRIMARY KEY (sandbox, repo)
+  released_at TEXT,
+  released_why TEXT
 );
+CREATE INDEX IF NOT EXISTS claims_repo_expires ON claims (repo, expires_at);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
--- One row per project while a merge Workflow instance is running.
-CREATE TABLE IF NOT EXISTS leases (
-  project TEXT PRIMARY KEY,
-  instance TEXT NOT NULL,
-  acquired_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  value TEXT NOT NULL
 );

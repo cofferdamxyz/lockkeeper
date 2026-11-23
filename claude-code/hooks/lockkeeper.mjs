@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Lockkeeper's Claude Code hooks (DESIGN.md §13 step 2). Two touchpoints, nothing after a push:
+// Lockkeeper's Claude Code hooks (DESIGN.md, "The hooks"). Two touchpoints, nothing after a push:
 //   node lockkeeper.mjs session-start   SessionStart: the brief for this repository (or each
 //                                       repository under the working directory, in a cloud session)
 //   node lockkeeper.mjs pre-tool        PreToolUse on Bash: before `git commit` and `git push`,

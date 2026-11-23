@@ -1,39 +1,22 @@
-import type { LiveHub } from "./live";
-import type { AgentSandbox } from "./sandbox";
-import type { MergeWorkflow } from "./workflow";
-
 /**
- * Bindings and variables the Worker, the Durable Object, the Workflow and the
- * outbound gateway share. `wrangler types` generates the global `Env`; this
- * interface pins the shape the code relies on so it type-checks before the
- * generated file exists.
+ * The Worker's bindings (`wrangler.jsonc`). Deliberately nothing that could run an agent or
+ * merge: no container, Workflow, queue, Durable Object or service binding (the guard test).
  */
 export interface LockkeeperEnv {
-  ARTIFACTS: Artifacts;
-  AI: Ai;
-  /** Optional until the index exists: without it, briefs and overlaps use the ledger only. */
-  VECTORIZE?: VectorizeIndex;
   DB: D1Database;
-  SANDBOX: DurableObjectNamespace<AgentSandbox>;
-  /** Optional until the hub is deployed: without it, dashboards poll. */
-  LIVE?: DurableObjectNamespace<LiveHub>;
-  MERGE_WORKFLOW: Workflow;
-  ASSETS: Fetcher;
+  /** Workers AI for bge-m3 embeddings. Without it overlap is by path only. */
+  AI?: Ai;
+  /** The index. Without it overlap is by path only. */
+  VECTORIZE?: VectorizeIndex;
 
-  AI_GATEWAY_ACCOUNT_ID: string;
-  AI_GATEWAY_ID: string;
-  ARTIFACTS_NAMESPACE: string;
-  CLAUDE_CODE_VERSION: string;
+  /** `production` behind Access; `development` with an empty `ACCESS_AUD` (`.dev.vars`) skips Access for `wrangler dev`. */
+  ENVIRONMENT: string;
+  GITHUB_APP_ID: string;
+  /** Team domain, e.g. https://cofferdam.cloudflareaccess.com */
+  ACCESS_TEAM_DOMAIN: string;
+  /** The Access application's audience tag. Empty outside development: every request is refused. */
+  ACCESS_AUD: string;
 
-  AI_GATEWAY_TOKEN: string;
-  DASHBOARD_TOKEN: string;
-  GITHUB_DEPLOY_KEY?: string;
-}
-
-export const GATEWAY_HOST = "gateway.ai.cloudflare.com";
-export const NPM_HOST = "registry.npmjs.org";
-
-export function artifactsHost(env: Pick<LockkeeperEnv, "AI_GATEWAY_ACCOUNT_ID">): string {
-  // The git host for the account: https://<ACCOUNT_ID>.artifacts.cloudflare.net/git/<ns>/<repo>.git
-  return `${env.AI_GATEWAY_ACCOUNT_ID}.artifacts.cloudflare.net`;
+  /** Secret: the GitHub App's private key (PEM as GitHub hands it out). */
+  GITHUB_APP_PRIVATE_KEY: string;
 }

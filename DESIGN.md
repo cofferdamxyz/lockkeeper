@@ -2,823 +2,443 @@
 
 ## 1. What it is
 
-Lockkeeper lets many coding agents work on one repository at the same time
-without stepping on each other, and decides, change by change, what merges
-into `main`. It plays the part GitHub's coding agent plays, with two
-differences: everything runs on Artifacts, and the work is visible as it
-happens. Each agent works alone in its own Artifacts fork. A Vectorize
-index of everything in flight tells each agent what the others are doing
-before it starts. When agents finish, a Workflow asks Clef, Cloudflare's
-calibrated decision model, which change should merge next, whether it may
-merge without a human, and how much risk it carries for the work still in
-flight. Changes merge one at a time in a dedicated sandbox, where they are
-rebased onto `main`, tested, and either merged, handed to a human, or sent
-back to an agent with a note of what changed underneath them.
+Lockkeeper tells every person and every coding agent working on an
+organisation's repositories what else is in flight, before they collide,
+and advises in which order the open pull requests should land. It reads
+GitHub; it never runs an agent, merges, opens, labels or closes anything.
+Its one write to a repository is an advice comment on a pull request.
 
-The name is the one metaphor: a canal lock moves boats between water levels
-one chamber at a time, and the lockkeeper sets the order. Everything else
-uses the names Cloudflare developers already know.
+It answers four questions:
 
-| Term | Cloudflare primitive | Meaning here |
-|---|---|---|
-| project | Artifacts repository | the canonical repository, `main` is the truth |
-| fork | `repo.fork()` + `createToken()` | one isolated repository per task, one scoped token |
-| agent | Claude Code running headless | the process working on one task |
-| sandbox | container Durable Object (Sandbox SDK) | where an agent runs; one named instance is the merge sandbox |
-| index | Vectorize index | vectors for tasks in flight and merged changes |
-| brief | — | the context an agent receives at start, built from the index |
-| event | Queues event subscription | an Artifacts push, fork or delete arriving on the queue |
-| merge Workflow | Workflow | collects ready tasks, asks Clef, performs merges in order |
-| decision | Clef response | the recorded answers for one merge round |
-| decision log | Artifacts repository | the why behind each merge, versioned in git |
-| dashboard, map | Next.js static export + React Three Fiber on Workers static assets | the camera scene over the index, with the panels |
+- **What is in flight near these paths?** Branches ahead of the default
+  branch, open pull requests, and claims by sessions that have not pushed
+  yet, with what landed recently and which of the paths are sensitive.
+- **What moved under me?** Before a commit or a push: what the default
+  branch gained since the asker's merge base, which of those files the
+  asker also changed, and who else is on them.
+- **What should land next?** Clef, Cloudflare's calibrated decision model,
+  over the open pull requests of a repository: which lands next, may it
+  land without a person, how much risk it carries for the others.
+- **What is the present state?** One read for a tracker: branches, pull
+  requests, CI, issues, overlaps, claims and the landing order.
 
-## 2. Why a merge queue is not enough
+The name is the one metaphor: a canal lock moves boats between water
+levels one chamber at a time, and the lockkeeper sets the order. Here the
+lockkeeper watches the water and calls the order; a person works the
+gates.
 
-A merge queue takes pull requests in arrival order and serialises CI. With
-agents that is the wrong unit and the wrong order: agents start from stale
-context, produce overlapping work, and arrive together. Lockkeeper changes
-three things.
-
-- **Context before work.** The index holds every task in flight and every
-  merged change. A new agent receives a brief of the nearest in-flight work
-  and the latest merged changes in the same area, so overlap is reduced at
-  the source.
-- **Order by decision, not by clock.** Clef scores the ready set as a whole
-  and picks the next change to merge: least overlap with the others,
-  smallest blast radius, green tests, age as a tiebreaker. After each merge
-  the question is asked again, because `main` moved.
-- **Conflicts are work, not failures.** A conflict in the merge sandbox
-  starts a resolver agent that already has both intents and the test suite;
-  a resolution is a new candidate that goes back to Clef, never an
-  automatic merge.
-
-### 2.1 Answering the brief
-
-The competition asks for "the Git platform of the agentic era", not GitHub
-with agents added on top, and its announcement poses three questions: how
-agents know what other agents are working on, what happens when they make
-conflicting changes, and how to keep track of why a change was made.
-Lockkeeper's answers are the index and the brief, the merge Workflow with
-its sandbox and resolver, and a decision log written into git history.
-Mapped onto what a git platform is made of:
-
-| A git platform has | Lockkeeper has |
+| Term | Meaning here |
 |---|---|
-| Repository hosting | Artifacts repositories; `git clone` works for humans with a read token from the dashboard |
-| Branches and forks | Artifacts forks with a one-hour scoped token, created per task and deleted after the merge |
-| Pull requests | Merge candidates decided by Clef and recorded as decisions with probabilities instead of threads |
-| Code review | Clef over the whole ready set, comparing the changes against each other; a human gate for what Clef declines |
-| CI and deploy | Tests in the merge sandbox before the merge; Workers Builds after it |
-| Merge queue | The merge Workflow: Clef-ordered, one merge sandbox, decided again after every merge |
-| Conflict resolution | A resolver agent that holds both intents and the test suite |
-| History and blame | `git log` with trailers `Lockkeeper-Task` and `Lockkeeper-Decision` on every merge commit; the decision log repository versions the why beside the what |
-| Collaboration UI | The dashboard (§7): the index in three dimensions, live |
-| Agent context | The index, the briefs, the decision log: versioned storage for agent context, as the announcement asks |
+| in flight | A branch ahead of its default branch, an open pull request, or a live claim |
+| claim | "I am about to work on these paths", with a time to live, for the window before a branch is pushed |
+| brief | The in-flight answer as text, for a session to read at its start |
+| check | The answer before a commit or push, read live from GitHub |
+| candidate | An open pull request (drafts included) the advising pass ranks |
+| landing order | The order in which a repository's candidates should land |
+| unattended-eligible | A verdict that a candidate could land without review; nothing lands unattended |
+| decision | One request to Clef and its answer, kept in the ledger |
 
-Humans keep plain git. A merge is an ordinary merge commit; the difference
-is that its trailers name the task and the decision, and the decision log
-holds the goal, the brief, the agent's summary and Clef's answers for that
-commit.
+## 2. The principle
+
+Awareness, not a lock. Main always wins, branches always rebase, every
+push asks first. A claim, a brief or a landing order is a fact a session
+reads; none of them stops anyone. Every answer ends on that sentence, and
+a session whose Lockkeeper is unreachable works exactly as it did without
+it.
+
+The same holds for the advice. Clef's verdict is a comment to read and a
+number to calibrate. The person who lands branches decides, and the
+record of what they actually landed is what the thresholds are later
+checked against.
+
+Lockkeeper holds no credential that could change a repository's code:
+its GitHub App has metadata and contents read and pull-request write, and
+the Worker binds no container, Workflow, queue, Durable Object or
+service. `worker/test/guard.test.ts` fails if the Wrangler config binds
+one or if the source spells a write to GitHub other than the token
+request and the advice comment. The guard is a tripwire, not a proof, so
+`worker/src/**` and `lockkeeper.config.ts` are on the sensitive list.
 
 ## 3. Components
 
 | Component | Cloudflare primitive | Role |
 |---|---|---|
-| Project repository | Artifacts repo `lockkeeper/<project>`, production branch `main` | Truth for the project; Workers Builds deploys every merge; mirrored to GitHub |
-| Forks | `repo.fork("task-<id>")` + `createToken("write", 3600)` | One isolated fork per task; a token reaches one fork only |
-| Lockkeeper Worker | Worker (Hono) + D1 | API, dashboard assets, task ledger, orchestration entry points |
-| Agent sandboxes | Container Durable Objects (`durable_object` scheduling policy) running Claude Code | One agent per task, started with the goal, the conventions and the brief. The image is Cloudflare's managed `cloudflare/debian-trixie` plus a one-time bootstrap snapshot (git, ripgrep, Claude Code), so no Docker build is needed anywhere |
-| Index | Vectorize `lockkeeper-index` (1024 dims, cosine) + Workers AI `@cf/baai/bge-m3` | One vector per task revision; metadata `{task, status, paths, project}` |
-| Events | Queue subscribed to `cf.artifacts.repo.pushed` on the project repository | Head and map refresh when `main` moves outside Lockkeeper; idempotent on commit SHA. Subscriptions are per repository, so fork pushes are reported by the harness instead |
-| Merge Workflow | Workflow | Collects the ready set, asks Clef, runs the merge sandbox, asks again after each merge |
-| Merge sandbox | One named sandbox with a clone of the project repository and real git | Rebase or merge, tests, resolver agent, merge push, GitHub mirror |
-| Clef | Workers AI `@cf/cloudflare/clef` (`clef-flash` for the cheap questions) | `choice` (next), `noul` (may it merge unattended), `score` (risk to work in flight) |
-| Dashboard | Next.js static export + React Three Fiber, served as the Worker's static assets | The index in 3D: repository map, agents, overlap edges, the merge gate; panel with approvals and launch |
-| Decision log | Artifacts repo `lockkeeper/<project>-decisions` (planned, cut-list item) | One commit per task event (goal, brief, summary, decision): the why, versioned in git and clonable. The D1 `decisions` table is the record today |
-| Spend meter | AI Gateway (authenticated, BYOK Anthropic) | Every Claude call from an agent goes through it; budget and logs in one place |
+| Worker | Worker (Hono), `worker/src/index.ts` | The HTTP API, the MCP server, the cron |
+| Poller | Cron trigger, every five minutes | Reads GitHub through the App, under a D1 lease |
+| Ledger | D1 | Repositories, branches, default-branch moves, claims, advice, decisions, outcomes |
+| Index | Vectorize (1024 dimensions, cosine) + Workers AI `@cf/baai/bge-m3` | One vector per branch in flight and per claim; similarity where no path is shared |
+| Clef | Workers AI `@cf/cloudflare/clef` | `choice` (next), `noul` (may it land unattended), `score` (risk to the others) |
+| Access | Cloudflare Access in front of the hostname | Who may ask; the Worker verifies the assertion again |
+| GitHub App | Lockkeeper's own App on the organisation | Reads; writes the advice comment |
+| Claude Code pieces | `claude-code/` | The hooks and the stdio MCP proxy a session runs |
 
-Bindings: `ARTIFACTS`, `SANDBOX` (container DO class `AgentSandbox`;
-agent sandboxes are `agent-<task>`, the merge sandbox is `merge-<project>`,
-the bootstrap sandbox is `bootstrap`), `AI`, `VECTORIZE`, `DB` (D1), the
-queue consumer, `MERGE_WORKFLOW`, `ASSETS`. Vars: `AI_GATEWAY_ACCOUNT_ID`,
-`AI_GATEWAY_ID`, `ARTIFACTS_NAMESPACE`, `CLAUDE_CODE_VERSION`. Secrets:
-`AI_GATEWAY_TOKEN`, `DASHBOARD_TOKEN`, optional `GITHUB_DEPLOY_KEY`.
-Projects, thresholds and the agent model live in `lockkeeper.config.ts`.
+Bindings: `DB` (D1), `VECTORIZE`, `AI`. Vars: `ENVIRONMENT`,
+`GITHUB_APP_ID`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`. Secret:
+`GITHUB_APP_PRIVATE_KEY`. Without `AI` or `VECTORIZE` overlap runs by path
+only and the advising pass orders by its rules; nothing else changes.
 
-## 4. A task's life
+## 4. The poller and the index
 
-1. **Launch.** `POST /tasks` with one goal per line. For each goal the
-   Worker writes a `queued` row, forks the project repository into
-   `task-<id>` (default branch only), embeds the goal, and queries the
-   index for the five nearest vectors with status `running` or `ready`
-   plus the nearest `merged` ones. The result becomes the *brief*: "Other
-   agents are working on: … touching `src/limits.ts` (similarity 0.82).
-   Merged since the base: … ".
-2. **Sandbox start.** The Worker starts the task's sandbox with
-   `enableInternet: false`, so every outbound request passes through the
-   Worker, which allows only the AI Gateway, the Artifacts git host and the
-   npm registry, and swaps the placeholder `ANTHROPIC_API_KEY` for the
-   gateway token on the way out (the pattern from Cloudflare's Claude Code
-   guide). The fork's 1-hour write token never enters the sandbox either:
-   the Worker stores it against the sandbox's name, and the outbound gateway
-   adds it to requests for that one repository's git URL. `git clone` and
-   `git push` inside the sandbox carry no credentials at all.
-3. **Work.** The harness runs `claude --print --output-format stream-json
-   --verbose --dangerously-skip-permissions --no-session-persistence
-   --model $MODEL -- <prompt>` with `IS_SANDBOX=1` and
-   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. The prompt is: the goal,
-   the project's `AGENTS.md` (conventions, how to run tests), the brief,
-   and the rules (commit with a message that states the intent; do not
-   touch files outside the goal; run the tests before finishing). The
-   stream's final `result` event gives the summary, cost and `is_error`,
-   all recorded in D1.
-4. **Ready.** While the agent works, the harness's thirty-second check
-   pushes each new commit to the fork, so the map shows the branch
-   growing and the ledger keeps the agent's commits even if the run later
-   fails. When the agent exits, the harness commits anything uncommitted
-   under the agent's own message, runs the test suite, pushes to the
-   fork's `main`, captures
-   `git diff --stat` and the diff (size-capped) against the base commit,
-   and marks the task `ready` (or `failed` with the reason: no changes,
-   tests red, agent error). The sandbox is destroyed.
-5. **Index.** The harness reports the push itself, and the task is
-   re-embedded from goal + changed paths + diff summary, so the index now
-   describes real work, not an intention. Queue events (`pushed` on the
-   project repository) cover what the harness cannot see: a human pushing
-   to `main`, which refreshes the head and the repository map.
-6. **Decide.** The merge Workflow runs whenever a task becomes ready and no
-   merge is in progress (a D1 lease serialises it). Section 6 describes the
-   decision and the merge sandbox.
-7. **Merge.** The chosen change merges into `main` by a push from the merge
-   sandbox with a 10-minute write token minted for the project repository.
-   The merge commit carries the trailers `Lockkeeper-Task: <id>` and
-   `Lockkeeper-Decision: <id>`, and the decision log receives the task's
-   record. Workers Builds deploys it, the mirror pushes `main` to GitHub,
-   the task's vector is updated to `merged`, and the fork is deleted after
-   a grace period. The dashboard shows the deployed URL.
+A cron every five minutes, under a D1 lease so a manual `POST /v1/poll`
+never overlaps it. There is no webhook: no public ingress and no webhook
+secret.
 
-Statuses: `queued → running → ready → merging → merged`, with
-`needs_review` (a person approves, which sets `approved`, then `merging`;
-an approval survives a conflict the resolver fixes on the way in),
-`blocked` (a resolution failed; one automatic restart from a fresh fork
-with a new brief), `failed`, `abandoned`. A person may also hold any
-change in flight so it never merges unattended, and release it; a released
-change re-enters the lock and Clef decides again.
+It lists the repositories the installation can see (the installation's
+repository selection is the scope; `exclude` drops some, archived ones
+are skipped), then per repository the open pull requests. When the
+repository's `pushed_at` moved, it reads the branch list, one compare per
+branch whose head moved (files, ahead, behind, merge base, commit first
+lines) and one compare when the default branch moved, recorded in
+`main_moves` for "landed recently".
 
-## 5. The index
+CI comes from the one comment per job that Cofferdam CI keeps on each
+pull request (`<!-- cofferdam-ci:<job> -->`), because the App reads no
+check runs: `pass` when every job reported on the head, `fail` when one
+failed, `pending` while one still names an older head. The poller never
+reads Lockkeeper's own comment as a CI report.
 
-What is embedded: `goal`, the changed paths, the diff summary (first lines
-of `git diff --stat` and the commit messages), and, once merged, the
-agent's own summary. Metadata: `{task, status, paths[], project, base,
-head}`. Paths double as exact filters: overlap between two tasks is the
-pair (cosine similarity, Jaccard of path sets), and both numbers go to
-Clef.
+A branch is embedded when its head moves, from its repository, name, pull
+request title, last commit first lines and files. Deleted or fully merged
+branches leave the index. A branch without a commit for `staleDays` (14)
+and no pull request drops out of "in flight". The index is derived:
+everything in it can be rebuilt from GitHub and D1.
 
-The index is derived and rebuildable from D1 and git. It is also the
-"vector brain" of decision 0006 in miniature: the same index shape, over
-commits instead of CVs, is what Cofferdam OS will keep over the product
-repositories.
+## 5. Claims
 
-## 6. The merge Workflow
+A claim covers the window before a branch exists on GitHub:
+`{repo, paths, goal, branch?, session?}` with a time to live (60 minutes
+by default, 240 at most). It is owned by the Access identity that took it
+(only that identity renews or releases it), embedded like a branch,
+released when its branch reaches GitHub, and pruned a day after it ends.
+Paths may be files, directories (`src/lib/`) or globs (`src/lib/**`); a
+claim without paths covers the repository. Taking a claim returns the
+brief for its paths.
 
-**Candidate set.** All `ready` tasks, capped at 20 (Clef allows 64
-questions: one `choice` plus a `noul` and a `score` per candidate).
+A claim's label is free text a session gives itself. It says who is
+about to work somewhere, never that anyone else may not.
 
-**State** sent to Clef (JSON, truncated by Clef to its 65,536-token window
-if ever needed): per candidate `id`, goal, files changed, diffstat, tests,
-age in minutes, commit messages, and its overlap with every other
-candidate; plus the last five merged changes with their paths.
+## 6. The answer
 
-**Questions.**
+**In flight and the brief.** For a repository and a path set: every
+branch, pull request and claim that shares a path (glob-aware), or whose
+cosine against the query's text reaches `nearCosine` (0.6), with the
+Jaccard of the path sets beside it; the rest is counted, not listed. Plus
+what landed in the last `recentHours` (24) and which of the paths are on
+the sensitive list. `GET /v1/inflight` is the JSON, `GET /v1/brief` the
+same as text.
 
-```json
-{
-  "model": "clef",
-  "state": "<json above>",
-  "questions": {
-    "next": {
-      "type": "choice",
-      "instructions": "Which ready change should merge next? Prefer green tests, the smallest blast radius, the least overlap with the other ready changes, and the oldest on ties.",
-      "criteria": { "t-a1": "adds rate limiting in src/limits.ts; 120 lines; tests green; overlaps t-b2 on src/index.ts (0.71)", "t-b2": "…" }
-    },
-    "unattended.t-a1": {
-      "type": "noul",
-      "instructions": "May change t-a1 merge into main with no human review? Yes only if its tests pass, it touches no file another ready change touches, it changes no dependency or infrastructure file, and its commit message explains the change."
-    },
-    "risk.t-a1": {
-      "type": "score",
-      "instructions": "How much risk does merging t-a1 pose to the other changes in flight?",
-      "criteria": ["No risk to other changes", "Minor risk", "Major risk", "Critical risk"]
-    }
-  }
-}
-```
+**The check.** Before a commit or a push the answer reads GitHub live:
+one compare from the asker's merge base to the default branch, because
+the base is the asker's and the poll may be five minutes old. It reports
+what moved, which of those files the asker also changed, and other work
+in flight on them.
 
-Clef returns, with no prose to parse, the chosen option and a probability
-per option, a probability of "yes" per `noul`, and a probability-weighted
-score per `score`. The whole request and response are stored in D1 as a
-decision and shown on the dashboard.
+**The landing order.** `GET /v1/advice?repo=` and the MCP tool
+`landing_order`: per repository, each candidate's position, CI, verdict
+with its reasons, Clef's numbers, label suggestion and issue (§7).
 
-**Rules.** Merge unattended when `unattended ≥ 0.80`, `risk ≤ 1.0` and the
-tests are green in the merge sandbox; otherwise `needs_review`. If the
-chosen candidate's tests are red, take the next by probability. After a
-resolver agent touched a change, an unattended merge needs
-`unattended ≥ 0.90`. The thresholds are configuration; they start
-conservative because Clef has no history here yet. Every decision is later
-compared with what happened (did the merge break the next build?), which
-is the same calibration loop `COFFERDAM_ENGINE.md` E7 plans for the
-matching engine.
+**The present state.** `GET /v1/present?repo=`: per repository the
+branches in flight with their pull request, CI, issue and the files each
+shares with the others, the live claims and the landing order, in one
+read. It is what a tracker draws; the Cofferdam OS gatekeeper over
+Lockkeeper (`packages/lockkeeper-gatekeeper` in `cofferdam-os`,
+read-only, with its own Access service token) reads it for the
+Development Tracker's Present column.
 
-**Merge sandbox.** In the merge sandbox:
+| Route | What it answers |
+|---|---|
+| `GET /health` | Alive, and when the last poll ran. The one route the Worker answers without verifying the Access assertion again; Access still sits in front of it |
+| `GET /v1/brief?repo=&paths=&goal=&branch=` | The brief, as text |
+| `GET /v1/inflight?…` | The same as JSON |
+| `POST /v1/check` `{repo, base, paths, branch}` | What moved since `base`, the collisions, other work on those files |
+| `POST /v1/claims` `{repo, paths, goal, branch?, session?, ttl_minutes?}` | Takes a claim and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
+| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's and the last advising pass's reports |
+| `GET /v1/advice?repo=` | The landing order per repository |
+| `GET /v1/present?repo=` | Branches, overlaps, claims and the landing order in one read |
+| `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
+| `POST /mcp` | The MCP server (§9) |
 
-```
-git fetch project main && git checkout -B merge project/main
-git fetch fork-<id> main
-git merge --no-ff fork-<id>/main          # or rebase; configurable
-npm test
-git push project merge:main               # 10-minute write token, env only
-```
+## 7. The advising pass
 
-A conflict starts the resolver: `claude --print …` in the merge sandbox's
-working tree with the conflicted files, both goals (the one that merged and
-the candidate), the instruction to keep both intents, and the test command.
-A clean, green resolution is committed, pushed to the task's fork (a
-fast-forward, so the fork now contains the resolved merge), re-embedded,
-and goes back to Clef as a new revision. A failed resolution marks the task `blocked`; the Worker
-restarts it once from a fresh fork of the new `main` with a brief that
-lists what merged meanwhile, which is the awareness mechanism in reverse.
-
-**Ask again.** After every merge the remaining candidates' overlaps are
-recomputed against the new `main` and Clef is asked again. The sequence is
-therefore decided one merge at a time, by Clef, never by arrival order.
-
-## 7. The dashboard
-
-Lockkeeper's user-facing shape is the one GitHub's coding agent made
-familiar: hand over a task, an agent works it in isolation, you watch,
-review and merge. The difference is that all of it runs on Artifacts, and
-that watching is the point: the primary surface is a map of the repository
-with the work on it, not a list of pull requests.
-
-**Why a map.** GitHub's primary surface is the pull request list because
-its users read every change. With a fork per task and agents producing
-commits faster than anyone reads them, the unit of attention has to move
-from the change to the region of code, and to the lock that orders what
-lands. The map answers the questions a list cannot answer at a glance:
-where work is happening and by whom, which two agents are about to
-collide, what landed in the last hour and in what order, which parts of
-the code are hot. One rule decides what goes on it: every element is
-either an answer to one of those questions, backed by data the Worker
-holds, or a control that changes what Lockkeeper or an agent does.
-Anything else was cut.
-
-**Shape.** The layout follows the coding-agent apps people already use: a
-sidebar with the project and its sessions, a home screen whose centre is
-the composer, a session view with the agent's stream beside map, diff
-and decision tabs, a work list, and the Map view as the live
-visualisation of what is happening in Artifacts. The home screen opens
-with a one-line fleet summary (working, needs you, merged today, or "all
-quiet"). The two decisions an operator makes before launching sit above
-the composer as chips: where the agents start from (`main` at its sha)
-and how their work lands (auto merge or hold for review, also ⇧Tab). One
-goal per line launches one agent each. Under the composer, four starters
-do things rather than open dialogs: fill the box with the demo's three
-overlapping goals, switch to review mode, open the lock, replay the last
-session. The radar's heading says what the list is for: needs you, in
-flight, or recent. The sidebar ends with a getting-started card that
-reads the state (image built, project registered, code pushed,
-repository indexed, first agent launched), offers the next step as a
-button and disappears when all five are done, then the deployment host
-with the scheme toggle and a way to forget the token.
-
-**Stack.** Next.js static export served as the Worker's assets, set in
-Inter. three.js through React Three Fiber draws the map as a camera scene
-in the language of Alex Harri's *Planes*: a near-black ground grid tinted
-blue, thin lines, glassy plates, phong spheres, a tilted camera that
-slowly orbits until you take it. shadcn/ui (Tailwind 4) is the chrome.
-Dark by default; a light scheme is a toggle. Colour has one grammar, on
-the map and in every list: hue means directory, the saturated accents
-mean agents, amber means a change waits for a person, red means failed
-or blocked, blue means the lock is acting (the lock ring, the now ring,
-merging, a person's approval), and white means landed unattended. A
-merge the resolver reconciled first is a double ring, not a colour.
-
-**The map: the strata city.** The repository is the floor, time rises
-above it, and `main` is the column at the lock.
-
-- **Floor.** The repository as a radial tree. Rings are directory depth,
-  sectors are directories sized by their subtrees, blocks are files with
-  height by size and brightness by recent change. Inside a sector, files
-  that change together sit side by side (a greedy seriation over the
-  co-change counts in the indexed commits), and the test directory lands
-  beside the source directory it changes with. The floor is `main`'s
-  tree; a file a fork adds before it lands is a translucent ghost in its
-  sector, and a file a merge removed inside the window stays as a ghost.
-- **Height is time, at two speeds.** The window is a control (auto, 1h,
-  3h, 12h, 2d); auto is the smallest standard window that holds every
-  live task and the last four merges. Inside it, stretches with activity
-  take the column at one rate and quiet stretches longer than twenty
-  minutes fold into short breaks marked on the column with their length,
-  so the last session fills the column however long ago it was. Ticks
-  are clock times inside the stretches shown at full height. Older
-  history sinks into the floor's brightness.
-- **Plates are commits**, laid over the files each one touched. A stack
-  over one footprint is a branch, A then B then C. Commits reach the map
-  as they happen: while an agent works, the sandbox pushes each new
-  commit to the fork on its thirty-second check and the Worker indexes it
-  from the fork (`live: true`); when the merge lands, history indexing
-  replaces those rows with the full ones. Two live agents on one file get
-  a small lateral offset so both chains stay readable. A commit that
-  spans files is linked along the rings (polar routing), never through
-  the column.
-- **The column is `main`.** A ring on it is a merge: white when Clef
-  cleared it unattended, blue when a person approved it, and a double
-  ring when the resolver agent reconciled a conflict first. Spokes point
-  at the files that landed. At most three merges carry a label at a
-  time, the latest lit ones plus the picked one; the panel lists the
-  rest.
-- **The lock chamber.** The discs stacked under the now ring are the
-  changes waiting to enter `main`, in the order they will: merging now,
-  approved, pinned, then Clef's choice, then held for review. Dragging a
-  disc (or the arrows in the lock panel) pins the order; the Workflow
-  takes the pinned candidate first and still asks Clef to score it, and
-  the unattended rule still applies. "Let Clef decide" clears the pins.
-- **Beacons are agents**, hovering over the file they are on now, read
-  from the parsed activity stream: editing pulses, reading is dimmer,
-  held is amber, blocked is red. A red halo marks a file two live agents
-  are changing.
-- **Status is visible.** A branch's thread is dashed while it waits for
-  review, red when it failed or is blocked, faded when abandoned.
-- **Selection is disclosure.** At rest, live work and the last three
-  merges are lit and older strata are dim. Picking an agent, a file, a
-  commit or a merge ring lights its subgraph and dims the rest. The lock
-  panel, the session list and the scene share one selection.
-- **The now ring is the scrubber.** Drag it down the column to replay:
-  everything above it disappears and statuses replay from the history.
-  The timeline along the bottom does the same with a slider.
-- **Panels.** A file opens its content, the agents touching it, its
-  commits and an overlap warning; a commit opens its message, files and
-  session; a merge opens how it happened, Clef's gauges against the
-  thresholds, the candidates it was weighed against and what landed; a
-  task opens its files, its commits in order and its summary. A legend
-  ("How to read") sits in the corner.
-
-**The chrome (shadcn/ui).**
-
-- A command palette (⌘K) launches goals, approves, and jumps to a task or a
-  file. The sidebar lists the project's sessions with a status icon each.
-- A task launched in review mode never merges unattended; the mode sits
-  beside the prompt, the way an agent app offers interactive and auto.
-- The session view is the agent's run as a record: a header of facts
-  (base and head, tests, cost, duration, commits, the files it touched),
-  what the agent was told (the brief, folded), then the run as a
-  timeline where each tool call is paired with its result, shell lines
-  read as their first command plus a count, outputs that carry a signal
-  (test counts, commit shas, errors) show inline and the rest unfold on
-  click, the agent's notes and its outcome render as prose, and its
-  commits close the record in order. The record's sections are tabs on
-  the header's bottom edge, the way a pull request page does it:
-  activity, map (the city with this task lit, full width), diff (with
-  the file count) and decision (Clef's answers as gauges with the
-  threshold mark, the unattended score on the tab). Approve is the only
-  accented action.
-- Toasts announce ready, merged, conflict, needs review.
-
-**Data.** `GET /api/state` carries the files, every commit with its
-files (added and deleted marked, `live` while it sits on a fork), the
-tasks with their pinned lock order, the merges and the decisions.
-`GET /api/tasks/:id/events` is the parsed activity, `GET /api/history`
-the timeline. Changes land by push, not polling: the page asks
-`POST /api/live/ticket` for a single-use ticket and opens a WebSocket to
-`/api/live?ticket=…`, served by a `LiveHub` Durable Object per project
-(hibernating WebSockets). The Worker broadcasts on every push, status
-change, merge and lock change; the page refetches on each message and
-keeps a slow poll as the floor. `PUT /api/projects/:id/lock` pins the
-order.
-
-## 8. Isolation and secrets
-
-- An agent's token reaches its fork only, lives one hour, and never
-  enters the sandbox: the outbound gateway injects it per request.
-- Sandboxes have no direct internet; the Worker's outbound handler allows
-  three hosts and injects the gateway token. The Anthropic key never leaves
-  AI Gateway.
-- The project repository's write token is minted for ten minutes per merge.
-- Nothing from Cofferdam's product code is in the demo repository;
-  submissions are public and not confidential.
-
-## 9. Storage
-
-D1 tables: `projects` (id, repo, github_source, default_branch,
-conventions_path, test_command, image, merge_mode), `tasks` (id, project,
-goal, fork, status, base_sha, head_sha, files JSON, diffstat, tests_ok,
-cost_usd, restarts, created_at, updated_at), `pushes` (task_id, ref,
-before, after, commits JSON, at), `decisions` (candidates JSON, request
-JSON, response JSON, chosen, at), `merges` (task_id, decision_id, mode,
-main_before, main_after, conflict, resolved_by, approved_by, at), `events`
-(type, payload JSON, at; unique on type + SHA for idempotency),
-`positions` (vector_id, x, y, z, basis_id). Diffs over 64 KB go to R2
-(optional, cut-list item).
-
-## 10. The demo
-
-`DEMO.md` is the runbook: the goal set, the shot list and the narration.
-What follows is the plan as first written.
-
-Project `sample-api`: a small Hono Worker with a few JSON endpoints and a
-vitest suite, pushed to the project repository and connected to Workers
-Builds. Four goals launched together:
-
-1. input validation with tests;
-2. a rate-limiting middleware;
-3. a `/health` endpoint reporting version and uptime;
-4. split the router into modules (touches everything: the conflict
-   generator).
-
-A fifth goal launched later ("add caching headers to list endpoints")
-shows the index at work: its brief names the rate limiter that merged and
-the file layout after the split.
-
-Video (5–10 minutes): the problem and the lock analogy; the architecture
-diagram; launch; forks and sandboxes appearing; a brief shown inside a
-prompt; the first Clef decision and merge with Workers Builds deploying;
-the overlapping pair, Clef ordering the smaller first, the conflict, the
-resolver, the `needs_review` card and the approval; GitHub receiving
-`main`; the fifth task's brief; what this becomes inside Cofferdam.
-
-## 11. Build plan
-
-The plan as written on 2026-10-10; the change log at the end records
-what shipped and when.
-
-| Day | Morning | Afternoon | Checkpoint |
-|---|---|---|---|
-| Sat 10-11 | Scaffold: Worker (C3), bindings, D1 schema; project repo with `sample-api`; sandbox image (Claude Code, git, node); sandbox start → `claude -p` → harness commit, tests, push | Queue consumer; index upsert; repository map embedding and projection; brief; `/api/state` | One task runs end to end and shows in the state API |
-| Sun 10-12 | Clef client and request builder; decision ledger; merge Workflow with merge sandbox, tests, merge push, trailers, cleanup; ask-again loop | Dashboard v1: map, agents, edges, merge gate, panel with approvals; `needs_review` | The four-goal scenario runs and is visible live |
-| Mon 10-13 | Resolver path; decision log; Workers Builds connection; GitHub mirror; timeline | README with run instructions, LICENSE (MIT), diagram, AI Gateway budget; record the video; publish | Package complete |
-| Tue 10-14 | Buffer: retakes, fixes | Publish, or submit, before 23:59 PDT (decision 0008) | — |
-
-Cut list, in order, if the Sunday checkpoint slips: the timeline; the
-GitHub mirror; the decision log (the ledger stays in D1); the resolver
-agent (a conflict becomes `needs_review`); the fifth task; the live tail
-(final summary only).
-
-## 12. What Cofferdam keeps
-
-Re-checked on 2026-10-22 against the company loop (Cofferdam workspace
-decision 0053, accepted 2026-10-22, which amends decisions 0006 and 0008; reasoning in
-the workspace `docs/runbooks/company-loops.md`). Claude Code cloud sessions,
-Projects threads and routines are Cofferdam's delegated executor, so
-Lockkeeper does not run agents for Cofferdam. It keeps the parts GitHub
-lacks:
-
-- **The index**, re-pointed at GitHub: what is in flight near these paths,
-  including the first hour before a branch is pushed, through claims with a
-  time to live. Overlap stays cosine plus Jaccard of paths.
-- **The Clef client, request builder, decision ledger and calibration loop**
-  as advice: which change lands next, may it go unattended, how risky. The
-  calibration target is what the founder actually landed, which is the
-  number that could later unlock fast-forward landing under a bypass
-  identity. These remain the finalist decision pass of the workspace
-  `docs/product/engine.md` (E1/E8) with a different state.
-- **A sensitive-path list**: a pull request touching one is never
-  unattended-eligible and gets a `security` label suggestion. The list is
-  `advise.sensitive` in `lockkeeper.config.ts`, corrected on 2026-10-22 to
-  the real paths (the decision's `cofferdam-api/src/auth/**` matched
-  nothing): the plane's session attestation, authority checks, ceremonies,
-  Self binding, user operations, relay and `env.ts`, with their routes; the
-  whole attester; the app's passkey, recovery phrase and wallet modules;
-  `base-contracts/**`; every `wrangler.jsonc`; the OS `deployment.jsonc` and
-  `scripts/**`; and every `.github/workflows/**`, because CI is the evidence
-  and a change to it must never go unattended. The brief and the check name
-  the sensitive paths from step 1, the label suggestion and the eligibility
-  verdict come with step 3's comments.
-- **The index pattern**, which is the OS's rebuildable vector layer over
-  commits and decisions from decision 0006.
-
-The dashboard stays with the demo. Its scene may still become the engine's
-"what the matcher sees" transparency screen; for Cofferdam's development the
-Development Tracker's Present column is the screen.
-
-## 13. Deployment model
-
-Lockkeeper is self-hosted, one deployment per organisation, inside that
-organisation's own Cloudflare account: the same posture as the Cloudflare
-OS wrapper. Code, tokens, agent output, the Anthropic key on the gateway
-and the decision ledger never leave the account, billing stays on the
-organisation's plan, and Cloudflare Access decides who may look and who
-may approve. It is not a multi-tenant service.
-
-**Two deployments for Cofferdam.**
-
-| Deployment | Hostname | Purpose |
-|---|---|---|
-| Demo | `lockkeeper-demo.cofferdam.xyz` | The public showcase: `sample-api`, the four goals, the video, the full runner (forks, sandboxes, outbound gateway, merge sandbox) and the 3D dashboard. Behind `DASHBOARD_TOKEN` |
-| Cofferdam (decision 0053; steps 1 and 2 built 2026-10-22, not deployed) | `lockkeeper.cofferdam.xyz` | The awareness and landing-advice service over the product repositories on GitHub, behind Cloudflare Access with the `cofferdam.cloudflareaccess.com` team. No runner, no Artifacts forks, no sandboxes, no outbound gateway, no dashboard |
-
-**The Cofferdam deployment, in build order** (about four to five days of
-agent time; the first step is usable alone):
-
-1. **Poll-based index and in-flight endpoint with claims** (built
-   2026-10-22, below). A cron reads
-   GitHub every few minutes (branches, open pull requests, changed paths,
-   CI comments): no public ingress and no webhook secret. Identity: a
-   GitHub App with metadata and contents read and pull-request write (for
-   comments), a trust-boundary item: Lockkeeper's own App, created now,
-   never the OS bot's token (the founder, workspace OD-14).
-2. **MCP server and Claude Code hooks** (built 2026-10-22, below). An MCP server on the Worker behind
-   Access with a service token serves Claude Code's three touchpoints: the
-   brief and a claim at session start, a hook before commit and push that
-   prints what moved into context, nothing after the push. Main always
-   wins, branches always rebase, every push asks first; awareness is a fact
-   a session reads, never a lock it takes. A claude.ai connector for
-   people's Duets (Access as the OIDC provider in front of the same server)
-   waits until a second person asks.
-3. **The advising pass** (built 2026-11-11, below). Clef over the open
-   candidates; one comment per candidate pull request (risk,
-   unattended-eligible or not, the evidence) and an ordered landing list.
-   Clef returns choices and probabilities, not prose. Nothing is merged or
-   opened by Lockkeeper.
-4. **An OS gatekeeper over Lockkeeper** so the Development Tracker's In
-   flight list renders the branch line, overlap chips, claims and the
-   landing order. Lockkeeper's side is `GET /v1/present?repo=` (built
-   2026-11-11): per repository the branches in flight with their pull
-   request, CI, issue and the files each shares with the others, the live
-   claims and step 3's landing order, in one read. The gatekeeper itself is
-   `packages/lockkeeper-gatekeeper` in `cofferdam-os`, read-only, with its
-   own Access service token.
-
-**What steps 1 and 2 built** (2026-10-22, not deployed yet). A second
-Worker from this repository, `worker/wrangler.cofferdam.jsonc`
-(`lockkeeper-cofferdam`), entry `worker/src/advise/index.ts`. Its bindings
-are D1 (`lockkeeper-cofferdam`, migrations in `worker/migrations-cofferdam/`),
-Vectorize (`lockkeeper-cofferdam`, 1024 dimensions, cosine, a metadata index
-on `repo`) and Workers AI for bge-m3; no container, Artifacts, Workflow,
-queue, Durable Object or assets, and `workers_dev` is off. A guard test
-fails if the entry ever imports the runner or the config binds it.
-
-- *Identity.* The App's numeric id is the var `GITHUB_APP_ID`, its private
-  key the secret `GITHUB_APP_PRIVATE_KEY`, in GitHub's own PKCS#1 form (the
-  Worker wraps it into PKCS#8 for WebCrypto). The Worker signs a nine-minute
-  App JWT, finds the installation on `cofferdamxyz`, and mints an
-  installation token, held in memory until five minutes before it expires.
-  The only write to GitHub is that token request.
-- *The poller.* A cron every five minutes, under a D1 lease so a manual
-  `POST /v1/poll` never overlaps it. It lists the repositories the
-  installation can see (the installation's repository selection is the
-  scope; `advise.exclude` drops some, archived ones are skipped), then per
-  repository the open pull requests; when the repository's `pushed_at`
-  moved, the branch list, one compare per branch whose head moved (files,
-  ahead, behind, merge base, commit first lines) and one compare when the
-  default branch moved, recorded in `main_moves` for "landed recently".
-  CI comes from the one comment per job that Cofferdam CI keeps on each pull
-  request (`<!-- cofferdam-ci:<job> -->`), because the App reads no check
-  runs: `pass` when every job reported on the head, `fail` when one failed,
-  `pending` while one still names an older head. A branch is re-embedded
-  when its head moves; deleted or fully merged branches leave the index.
-  Branches without a commit for `advise.staleDays` (14) and no pull request
-  drop out of "in flight".
-- *Claims.* `{repo, paths, goal, branch?, session?}` with a time to live
-  (60 minutes by default, 240 at most), owned by the Access identity that
-  took it (only it renews or releases), embedded like a branch, released
-  when its branch reaches GitHub, pruned a day after it ends. Paths may be
-  files, directories (`src/lib/`) or globs (`src/lib/**`); a claim without
-  paths covers the repository.
-- *The answer.* For a repository and a path set: every branch, pull request
-  and claim that shares a path (glob-aware), or whose cosine against the
-  query's text reaches `advise.nearCosine` (0.6), with the Jaccard of the
-  path sets beside it; the rest is counted, not listed. Plus what landed in
-  the last `advise.recentHours` (24) and which of the paths are on the
-  sensitive list. The check before a commit or push reads GitHub live (one
-  compare from the asker's merge base to the default branch), because the
-  base is the asker's and the poll may be five minutes old: what moved, which
-  of those files the asker also changed, and other work in flight on them.
-  Every answer ends on the principle: awareness, not a lock.
-- *Access.* The hostname sits behind Access (`cofferdam.cloudflareaccess.com`),
-  and the Worker verifies `Cf-Access-Jwt-Assertion` again against the team's
-  keys, the application's audience (var `ACCESS_AUD`) and the issuer. A
-  person is named by email, a service token by `service:<client id>`.
-  Without `ACCESS_AUD` every request is refused, except under
-  `ENVIRONMENT=development` for `wrangler dev`.
-- *MCP.* `POST /mcp`, Streamable HTTP without sessions or a server stream,
-  JSON responses: `brief`, `claim`, `renew_claim`, `release_claim`, `check`,
-  `in_flight`. A tool that fails answers as text with `isError`, so a session
-  carries on without Lockkeeper.
-- *Stdio proxy.* `claude-code/mcp-stdio.mjs`, one Node script with no
-  dependencies: a stdio MCP server that POSTs each JSON-RPC line to `/mcp`
-  with the service-token headers from its environment and writes the answer
-  back (a notification's 202 produces nothing). It exists because a Claude
-  desktop-app session has no shell that loaded the workspace `.envrc`, so an
-  HTTP MCP entry with `${VAR}` headers would send empty headers there; run
-  under `direnv exec <workspace>`, the proxy reads the token at start and
-  nothing secret is written into a settings file.
-- *Hooks.* `claude-code/hooks/lockkeeper.mjs`, one Node script with no
-  dependencies: on `SessionStart` it prints the brief for the repository (or,
-  in a cloud session that starts above the clones, for each clone with
-  something to say), with the changed paths of the current branch; on
-  `PreToolUse` for Bash, before `git commit` and `git push`, it computes the
-  merge base and changed paths locally, asks `/v1/check` and adds the answer
-  to the context. It blocks in one case only, because that context reaches
-  the model next to the tool's result, after the push already ran: a push
-  whose files collide with what landed on `main` is held once with the
-  reason, so the session rebases first, and the same push goes through the
-  second time (`LOCKKEEPER_PUSH=inform` turns the hold off). Unconfigured,
-  unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs after a push. Example settings and
-  MCP config sit beside it.
-
-**What step 3 built** (2026-11-11, deployed 2026-11-13 with comments on). `worker/src/advise/advice.ts`,
-run by the cron right after the poll, not as a Workflow binding: this
-deployment binds no runner, and the pass is one request per repository.
+`worker/src/advice.ts`, run by the cron right after the poll, one request
+to Clef per repository.
 
 - *Candidates.* Per repository, the branches with an open pull request,
   drafts included (delegated branches stay drafts until they land), oldest
-  first, at most `clef.maxCandidates` (20); past that the newest wait for a
-  later round, without advice. Each carries its overlap with
-  every other candidate (shared files, Jaccard of the path sets, cosine of
-  the bge-m3 vectors when Workers AI is bound) and the files the default
-  branch changed after its base.
-- *The question.* §6's three, over pull requests: `next` (a choice, when
-  there are two or more), and per candidate `unattended` (a noul) and `risk`
-  (a score on the four levels). The state names CI, the commits ahead and
-  behind, the sensitive paths, the issue and the last five moves of the
-  default branch. Everything a pull request chooses for itself (file names,
+  first, at most `clef.maxCandidates` (20); past that the newest wait for
+  a later round, without advice. Each carries its overlap with every other
+  candidate (shared files, Jaccard of the path sets, cosine of the bge-m3
+  vectors when Workers AI is bound) and the files the default branch
+  changed after its base.
+- *The question.* Three, over pull requests: `next` (a choice, when there
+  are two or more), and per candidate `unattended` (a noul) and `risk` (a
+  score on four levels). The state names CI, the commits ahead and behind,
+  the sensitive paths, the issue and the last five moves of the default
+  branch. Everything a pull request chooses for itself (file names,
   titles, commit messages) is cut to length, file names are reduced to a
   plain path alphabet, and the state is bounded at 150,000 characters. A
   repository is asked again only when its candidates moved (a head, CI, a
   title, the default branch, a pull request opened or closed), and nothing
   is embedded or asked before that check; after a failed or partial answer
-  it is asked again no sooner than thirty minutes later, and the order from
-  the rules stands meanwhile.
-- *The verdict.* The landing order is Clef's pick, then its probabilities;
-  what it did not rank follows the rules (green CI, least overlap, oldest).
-  A candidate is unattended-eligible only when nothing below holds: it
-  touches a sensitive path (which also suggests the `security` label); CI
-  did not pass on its head; it shares a file with another open pull
-  request; the default branch changed one of its files after its base, or it
-  is behind from a base older than the record of the default branch's moves
-  (fourteen days, twenty moves), so what changed under it is not known;
-  Clef's `unattended` is under `clef.unattended` (0.80) or its `risk` over
-  `clef.maxRisk` (1.0); Clef gave no answer. Eligible is a verdict to read:
-  nothing lands unattended in this deployment.
+  it is asked again no sooner than thirty minutes later, and the order
+  from the rules stands meanwhile.
+- *The verdict.* The landing order is Clef's pick, then its
+  probabilities; what it did not rank follows the rules (green CI, least
+  overlap, oldest). A candidate is unattended-eligible only when nothing
+  below holds: it touches a sensitive path (which also suggests the
+  `security` label); CI did not pass on its head; it shares a file with
+  another open pull request; the default branch changed one of its files
+  after its base, or it is behind from a base older than the record of the
+  default branch's moves (fourteen days, twenty moves), so what changed
+  under it is not known; Clef's `unattended` is under `clef.unattended`
+  (0.80) or its `risk` over `clef.maxRisk` (1.0); Clef gave no answer.
+  Eligible is a verdict to read: nothing lands unattended.
 - *The comment.* One per candidate, marked `<!-- lockkeeper-advice -->`:
   the head it speaks for, the position, the verdict with every reason,
   Clef's numbers, the label suggestion and the issue. It carries no
   timestamp, so it is created once and edited in place only when its text
   changes (written anew if someone deleted it); at most 40 writes a pass.
   File names appear in it only through the same plain alphabet, so a name
-  cannot close its code span or write a line of its own, and the poller
-  never reads Lockkeeper's own comment as a CI report. These two calls
-  (`writeComment` in `github.ts`) are the deployment's only writes to GitHub
-  besides its token; the guard test is a tripwire on any other write
-  spelled in the directory, not a proof, and the directory stays on the
-  sensitive list. A refusal (the App
-  without pull-request write) pauses comments for `advise.advice.retryHours`
-  (6); the advice is kept either way, and `advise.advice.comment: false`
-  turns comments off.
-- *The issue.* A branch named `claude/<issue>-<slug>`, as the dispatch
-  routine pushes it, is bound to that issue in `advise.issues.repo`
-  (`cofferdam`) by its name alone: in the comment, the brief, the in-flight
-  answer and the landing order. Whoever can push a branch chooses that
-  name, so the binding says which issue a branch claims, not that the issue
-  asked for it.
+  cannot close its code span or write a line of its own. These two calls
+  (`writeComment` in `github.ts`, called from `advice.ts` alone) are the
+  only writes to GitHub besides the token request. A refusal (the App
+  without pull-request write) pauses comments for `advice.retryHours` (6);
+  the advice is kept either way, and `advice.comment: false` turns
+  comments off.
+- *The issue.* A branch named `claude/<issue>-<slug>`, as Cofferdam's
+  dispatch routine pushes it, is bound to that issue in `issues.repo`
+  (`cofferdam`) by its name alone: in the comment, the brief, the
+  in-flight answer and the landing order. Whoever can push a branch
+  chooses that name, so the binding says which issue a branch claims, not
+  that the issue asked for it.
 - *The ledger and calibration.* Every request and answer is a row in
   `decisions` (kept 90 days). When a candidate leaves, `outcomes` records
   what the advice said (position, how many were open, Clef's numbers, the
-  verdict) and whether the pull request landed, was closed, or is gone from
-  GitHub (`unknown`): the record against which the thresholds are later
-  checked. A pull request that cannot be read for a passing reason is read
-  again on the next pass.
-- *The answer.* `GET /v1/advice?repo=` and the MCP tool `landing_order`:
-  per repository, the order with each candidate's CI, verdict, reasons,
-  numbers, label and issue. `POST /v1/advise` runs a pass by hand
-  (`?force=1` asks again where nothing moved). This is what step 4's
-  gatekeeper reads.
-- *Deploying it.* The D1 migration `0002_advice.sql`, then the Worker; the
-  App needs **Pull requests: Read and write** on its installation (it was
-  created with it; an installation that lacks it is refused by GitHub and
-  comments pause, nothing else changes).
+  verdict) and whether the pull request landed, was closed, or is gone
+  from GitHub (`unknown`): the record against which the thresholds are
+  later checked. A pull request that cannot be read for a passing reason
+  is read again on the next pass.
 
-**What an organisation customises** (`lockkeeper.config.ts` at the
-repository root, typed and non-secret, in the spirit of the OS wrapper's
-`deployment.jsonc`):
+## 8. Access and identity
 
-- projects: GitHub source, Artifacts repository name, default branch,
-  conventions file, test command, sandbox image variant (node and yarn,
-  pnpm, Foundry for contracts);
-- merge mode per project: `mirror` (the demo: merge into Artifacts `main`
-  and push it to GitHub), `advise` (Cofferdam, decision 0053:
-  no runner and no merge; the index polls GitHub, Clef's answers become
-  comments and a landing order, a person lands), or `pull-request` (a
-  runner deployment that lands on GitHub: the merge sandbox
-  pushes `lockkeeper/<task>` to GitHub and opens a pull request through a
-  GitHub App; GitHub CI and a human merge there; the mirror brings `main`
-  back and the index updates). In pull-request mode Clef still orders the
-  candidates, decides which to open first, and labels each with its risk
-  and "unattended-eligible" verdict for a later GitHub auto-merge rule;
-- Clef thresholds and model routing (`clef` or `clef-flash`, the agent
-  model, per-task spend cap);
-- the sandboxes' outbound allowlist (gateway, Artifacts host, package
-  registries the projects need);
-- the sensitive-path list (globs a pull request may never touch and still
-  be unattended-eligible);
-- access: `token` for a demo, `access` with the organisation's team and the
-  approver group, so every approval in the ledger carries an identity.
+**Who may ask.** The hostname sits behind Cloudflare Access, and the
+Worker verifies `Cf-Access-Jwt-Assertion` again against the team's keys,
+the application's audience (var `ACCESS_AUD`) and the issuer. A person is
+named by email, a service token by `service:<client id>`. Without
+`ACCESS_AUD` every request is refused, except under
+`ENVIRONMENT=development` for `wrangler dev`. `workers_dev` is off: a
+workers.dev URL would skip Access.
 
-Secrets stay in Wrangler: the gateway token, the GitHub App key, the
-dashboard token. The public repository is the template: an organisation
-deploys it with
-`npm create cloudflare@latest -- --template cofferdamxyz/lockkeeper`,
-edits `lockkeeper.config.ts`, sets the secrets and runs `pnpm deploy`.
+**Who Lockkeeper is on GitHub.** Its own GitHub App, never another bot's
+token. The App's numeric id is the var `GITHUB_APP_ID`, its private key
+the secret `GITHUB_APP_PRIVATE_KEY`, in GitHub's own PKCS#1 form (the
+Worker wraps it into PKCS#8 for WebCrypto). The Worker signs a
+nine-minute App JWT, finds the installation on the organisation, and
+mints an installation token, held in memory until five minutes before it
+expires. Permissions: metadata read, contents read, pull requests read
+and write (for the advice comment). No webhook.
 
-**Mirrors** (the runner's deployments only, not Cofferdam's advisory one).
-Public GitHub repositories enter Artifacts with `import`
-(public HTTPS only); private ones use the GitHub Actions push mirror of
-the workspace `docs/runbooks/development-setup.md` (Cofferdam OS seams, Context mirror). Both land in the organisation's namespace and
-become the project repositories the agents fork.
+**Secrets.** `GITHUB_APP_PRIVATE_KEY` through `wrangler secret put`,
+nothing else. An Access service token lives with the client that uses it
+(a Claude Code session, a bot, the OS gatekeeper), never in the Worker.
 
-**Cofferdam OS.** The Cofferdam deployment gains a gatekeeper so OS
-gadgets can read the in-flight view and the landing order. It never
-launches tasks: the OS proposes, Claude Code executes, and Lockkeeper
-advises.
+## 9. Clients
 
-## 14. Risks and unknowns
+### The MCP server
 
-- The container Durable Object API is new (`container.start()`,
-  `container.exec()`, snapshots, outbound interception). The sandbox class
-  uses `exec` for all file I/O, so it needs no shim in the image and works
-  on the managed image without Docker.
-- Claude Code headless needs the permissions bypass and `IS_SANDBOX=1`;
-  a rejected gateway token fails only after about three minutes of
-  retries, so the harness checks the gateway first.
-- Vectorize upserts are visible after seconds, not instantly; briefs read
-  D1 for in-flight tasks and the index for similarity.
-- Clef starts uncalibrated here; the human gate and conservative
-  thresholds cover that until decisions accumulate.
-- Artifacts counts create, push, pull and clone as operations; a task
-  costs roughly ten. The demo stays inside the 10,000 included per month.
-- Container budget: an agent sandbox runs on `standard-1` (½ vCPU,
-  4 GiB); five concurrent sandboxes for a few hours stay inside the
-  Workers Paid allowance (375 vCPU-minutes, 25 GiB-hours a month) during
-  development only barely, so idle sandboxes are destroyed promptly.
+`POST /mcp`, Streamable HTTP without sessions or a server stream, JSON
+responses: `brief`, `claim`, `renew_claim`, `release_claim`, `check`,
+`in_flight`, `landing_order`. A tool that fails answers as text with
+`isError`, so a session carries on without Lockkeeper.
 
+### The stdio proxy
+
+`claude-code/mcp-stdio.mjs`, one Node script with no dependencies: a
+stdio MCP server that POSTs each JSON-RPC line to `/mcp` with the
+service-token headers from its environment and writes the answer back (a
+notification's 202 produces nothing). It exists because a Claude
+desktop-app session has no shell that loaded the workspace `.envrc`, so
+an HTTP MCP entry with `${VAR}` headers would send empty headers there;
+run under `direnv exec <workspace>`, the proxy reads the token at start
+and nothing secret is written into a settings file.
+
+### The hooks
+
+`claude-code/hooks/lockkeeper.mjs`, one Node script with no dependencies.
+On `SessionStart` it prints the brief for the repository (or, in a cloud
+session that starts above the clones, for each clone with something to
+say), with the changed paths of the current branch. On `PreToolUse` for
+Bash, before `git commit` and `git push`, it computes the merge base and
+changed paths locally, asks `/v1/check` and adds the answer to the
+context.
+
+It blocks in one case only, because that context reaches the model next
+to the tool's result, after the push already ran: a push whose files
+collide with what landed on the default branch is held once with the
+reason, so the session rebases first, and the same push goes through the
+second time (`LOCKKEEPER_PUSH=inform` turns the hold off). Unconfigured,
+unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs
+after a push. Example settings and MCP config sit beside it.
+
+### Other readers
+
+Anything with an Access service token of its own reads the same routes.
+At Cofferdam: the Engineering and Security bots (`coworkers`) read the
+landing order, and the OS gatekeeper reads the present state (§6).
+
+## 10. Storage
+
+D1, migrations in `worker/migrations/`. Everything is rebuildable from
+GitHub except claims, which live for hours, and the decision ledger and
+outcomes, which are the calibration record.
+
+| Table | Holds | Kept |
+|---|---|---|
+| `repos` | One row per repository the App can see: default branch, head, last push and poll | While the App sees it |
+| `branches` | The work in flight: head, merge base, ahead and behind, files, commit first lines, pull request, CI, sensitive paths | Until deleted or merged |
+| `main_moves` | What moved into a default branch, poll to poll | Fourteen days (a read takes the newest twenty) |
+| `claims` | Paths, goal, owner, session label, branch, expiry | A day after it ends |
+| `advice` | The advice in force per candidate: position, Clef's numbers, verdict, reasons, the comment's body and id | Rebuilt when candidates move |
+| `decisions` | Every request to Clef with its answer or error | 90 days |
+| `outcomes` | What the advice said when a candidate left, and what happened to it | Kept |
+| `settings` | The poll lease, the last reports, per-repository fingerprints | — |
+
+Vectorize holds one vector per branch (`b:<hash>`, since branch names
+outgrow the 64-byte id) and per claim (`c:<id>`), with `repo`, `kind` and
+`name` as metadata; `repo` has a metadata index.
+
+## 11. Configuration
+
+`lockkeeper.config.ts` at the repository root, typed and non-secret:
+
+- `owner` and `exclude`: the organisation the App is installed on, and
+  repositories the index skips;
+- `sensitive`: globs, `<repo>/<path>`, a change may never touch and still
+  be unattended-eligible. Cofferdam's list names the plane's session
+  attestation, authority checks, ceremonies, passport binding, user
+  operations, relay and `env.ts`, with their routes; the whole attester;
+  the app's passkey, recovery phrase and wallet modules;
+  `base-contracts/**`; every `wrangler.jsonc`; the OS `deployment.jsonc`
+  and `scripts/**`; every `.github/workflows/**`, because CI is the
+  evidence and a change to it must never go unattended; and Lockkeeper's
+  own `worker/src/**` and this file;
+- `staleDays`, `claims` (default and maximum minutes), `nearCosine`,
+  `recentHours`;
+- `advice`: whether the advice is commented, and how long to wait after a
+  refusal;
+- `issues`: the repository that holds the issues and the pattern by which
+  a branch names one;
+- `clef`: the model (`clef` or `clef-flash`), the `unattended` and
+  `maxRisk` thresholds, `maxCandidates`.
+
+## 12. Deployment
+
+Self-hosted, one deployment per organisation, inside that organisation's
+own Cloudflare account. The index, the ledger and the App's key never
+leave the account, and Cloudflare Access decides who may ask. It is not a
+multi-tenant service.
+
+Cofferdam's deployment is the Worker `lockkeeper-cofferdam` at
+`lockkeeper.cofferdam.xyz`, behind the Access team
+`cofferdam.cloudflareaccess.com`, with D1 and Vectorize of the same name
+and the GitHub App `cofferdam-lockkeeper` installed on `cofferdamxyz`.
+The names carry `-cofferdam` because a demo Worker held the plain name
+when it was first deployed (§14); a rename would be a new Worker. Deploys
+are the founder's, from the Mac; the record is in the Cofferdam workspace,
+`docs/runbooks/cloudflare-deploys.md`.
+
+Another organisation deploys it by creating its own GitHub App and Access
+application, a D1 database and a Vectorize index, editing
+`worker/wrangler.jsonc` (names, ids, hostname, `GITHUB_APP_ID`,
+`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`) and `lockkeeper.config.ts`, setting
+the one secret and running `pnpm run deploy`. `README.md` has the commands.
+
+## 13. Planned
+
+Nothing in this section is built.
+
+- **The mobile reporter** (Cofferdam workspace decision 0088, accepted
+  2026-11-20). Lockkeeper files failed builds and submissions, TestFlight
+  feedback and crashes as deduplicated issues on `cofferdam-app`. It adds
+  the first write beyond the advice comment (issues and their comments on
+  that one repository; the App gains `issues: write`), the first route
+  outside Access (`POST /v1/expo/webhook`, answering only a body signed
+  with the Expo webhook secret) and read-only credentials for App Store
+  Connect and the Play Developer Reporting API, polled by the cron. The
+  guard test admits one more writer when it is built.
+- **A claude.ai connector** for people's own agents, with Access as the
+  OIDC provider in front of the same MCP server. It waits until a second
+  person asks.
+- **Calibration.** The `outcomes` table is filled; nothing reads it yet.
+  Checking the thresholds against what was actually landed is the step
+  that could later let an eligible pull request land without a person,
+  under a decision of its own.
+
+## 14. Where it came from
+
+Lockkeeper began in October 2026 as an entry for Cloudflare's Artifacts
+competition (Cofferdam workspace decisions 0008 and 0011): a runner that
+gave each coding agent its own Artifacts fork and container sandbox,
+merged their changes one at a time through a Workflow that asked Clef,
+and showed the work as a three-dimensional map. Cofferdam's own
+development never ran on it: Claude Code sessions and routines over
+GitHub did that job, and what Cofferdam needed from Lockkeeper was the
+part GitHub lacks, which is this service (decision 0053, 2026-10-22). The
+two lived in one repository until the runner, the dashboard and the
+sample project were removed on 2026-11-23 (decision 0092).
+
+The runner is in git history. The tag `competition-runner-final` is its
+last commit, with its own `DESIGN.md`, `README.md` and `DEMO.md`. What
+this service kept from it: the Clef request shape and the tolerant
+reading of its answers, the overlap pair (cosine and Jaccard of paths),
+the bge-m3 index and the decision ledger.
+
+## 15. Risks and unknowns
+
+- Clef starts uncalibrated here. Conservative thresholds and the fact
+  that nothing lands unattended cover that until outcomes accumulate.
+- CI is read from a comment convention, not from check runs. A repository
+  whose CI does not keep the `cofferdam-ci` comment reads as `none`, and
+  its pull requests are never eligible.
+- The poll is up to five minutes old. The check before a push reads
+  GitHub live for that reason; the brief does not.
+- Vectorize upserts are visible after seconds, not instantly; a claim
+  taken and queried at once is found by its paths, not yet by similarity.
+- The guard test reads how a write is spelled, not what the code does.
+  Review reads every change to `worker/src/**`.
 
 ## Change log
 
-- 2026-11-11: step 3 of the Cofferdam deployment built (§13, "What step 3
-  built"): the advising pass after each poll, Clef's three questions over
-  the open pull requests of a repository, the landing order, the
-  unattended-eligible verdict with its reasons, one comment per candidate
-  pull request edited in place, the issue bound by the branch name, the
-  decision ledger and the outcomes table, `GET /v1/advice` and the MCP tool
-  `landing_order`. It runs in the cron, not as a Workflow binding. The
-  fixtures' commit dates became relative: three tests had started failing
-  once the fixed October dates aged past `advise.staleDays`. Not deployed.
-  The same day, `GET /v1/present` for step 4's gatekeeper.
+- 2026-11-23: the competition runner removed (Cofferdam workspace
+  decision 0092): the agent sandbox, the Artifacts forks, the outbound
+  gateway, the merge Workflow and its sandbox, the queue consumer, the
+  dashboard and its map, `sample-api/` and `DEMO.md`. The service moved
+  from `worker/src/advise/` to `worker/src/`, its Wrangler config from
+  `wrangler.cofferdam.jsonc` to `wrangler.jsonc`, its migrations from
+  `migrations-cofferdam/` to `migrations/`, and its scripts lost their
+  `:cofferdam` suffix (`pnpm run deploy`, `pnpm db:migrate`). The
+  configuration is flat (no `advise` key, no projects, no agent settings).
+  `GET /health` no longer answers `deployment: "advise"`. `worker/src/**`
+  and `lockkeeper.config.ts` joined the sensitive list, which this
+  document had claimed and the configuration had not held. This document
+  was rewritten around the service; its earlier form is at the tag
+  `competition-runner-final`. The deployed Worker, D1 and Vectorize are
+  unchanged and keep their names.
 
-- 2026-10-22 (night): steps 1 and 2 of the Cofferdam deployment built
-  (§13, "What steps 1 and 2 built"): `worker/src/advise/`, its Wrangler
-  config, D1 schema, the GitHub App client, the poller, claims, the brief
-  and the check, Access verification, the MCP server and the Claude Code
-  hook. Not deployed; the founder creates the App, D1, Vectorize, Access
-  application and service token, and deploys from the Mac.
+- 2026-11-13: the advising pass deployed with comments on (Worker version
+  `42c2f6e4`).
 
-- 2026-10-22: §12 and §13 rewritten for Cofferdam workspace decision 0053
-  (accepted the same day; Lockkeeper's own GitHub App, built next): the Cofferdam deployment keeps the index, Clef and the
-  decision ledger as advice over GitHub (polling, claims, an MCP server for
-  Claude Code, a GitHub App identity, headless) and drops the runner; the
-  demo keeps everything.
-- 2026-10-11 (night): the session view's map, diff and decision moved
-  from a side panel into tabs on the header edge beside activity, one
-  section at a time at every width.
-- 2026-10-11 (night): the session view polished: a facts header with
-  file chips, the brief shown, tool calls paired with their results and
-  foldable, signal outputs inline, notes and outcomes as prose, the
-  closing note no longer repeated by the outcome, commits listed in
-  order.
-- 2026-10-11 (evening, after looking at Cursor's agent home): the
-  composer's decisions move above the box as chips with a ⇧Tab toggle;
-  four starters that act replace the dialog buttons; a getting-started
-  card with progress and an account row in the sidebar; one projects
-  dialog holds the push and import recipes.
-- 2026-10-11 (evening, after a design critique): time runs at two speeds
-  on the column, with quiet stretches folded into labelled breaks and
-  clock-time ticks; merge labels capped at three; one colour grammar
-  across the map and the lists (amber waits for a person, red failed,
-  blue the lock acting, white landed, a double ring for a resolved
-  conflict); the home screen opens with a fleet summary and a radar
-  that says what it is for.
-- 2026-10-11 (afternoon): hold and release on any change in flight
-  (`POST /api/tasks/:id/hold`); a released change re-enters the lock. The
-  sandbox gives the agent a git identity. A page that outlived a deploy
-  reloads itself once instead of freezing on missing chunks. The column
-  labels every other tick, staggers merge labels and drops narrow
-  sub-sector labels; the strata move every five seconds, not every tick.
-- 2026-10-11: a change a person approved keeps its approval when the
-  resolver agent reconciles a conflict on the way in; it no longer waits
-  for a second approval (the conflict row records `approved_by`).
-- 2026-10-11: the map rebuilt as the strata city (decision 0011 in the
-  Cofferdam decision log): repository on the floor, time as height,
-  `main` as the column with merge rings and the lock chamber, agents as
-  beacons, live fork commits, the lock order override and the live hub.
-  Replaces the concentric rings and orbital planes.
+- 2026-11-11: the advising pass built (§7): Clef's three questions over
+  the open pull requests of a repository after each poll, the landing
+  order, the unattended-eligible verdict with its reasons, one comment per
+  candidate pull request edited in place, the issue bound by the branch
+  name, the decision ledger and the outcomes table, `GET /v1/advice` and
+  the MCP tool `landing_order`. The fixtures' commit dates became
+  relative: three tests had started failing once the fixed October dates
+  aged past `staleDays`. The same day, `GET /v1/present` for the OS
+  gatekeeper.
+
+- 2026-10-22: the service built and first deployed (Cofferdam workspace
+  decision 0053): the GitHub App client, the poller, claims, the brief and
+  the check, Access verification, the MCP server, the stdio proxy and the
+  Claude Code hook.

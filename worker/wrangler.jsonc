@@ -1,60 +1,44 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "lockkeeper",
+  // Lockkeeper: awareness and landing advice over GitHub (DESIGN.md). It binds nothing that could
+  // run an agent or merge: no container, Workflow, queue, Durable Object, assets or service.
+  // The Worker, D1 and Vectorize names below are Cofferdam's deployed resources (first deployed
+  // 2026-10-22, when a demo Worker held the plain name); a rename would be a new Worker.
+  // Deploy from the Mac: `pnpm run deploy`.
+  "name": "lockkeeper-cofferdam",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-15",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "workers_dev": true,
-  // The public demo (DESIGN.md §13). The Cofferdam deployment gets its own hostname and Access.
-  "routes": [{ "pattern": "lockkeeper-demo.cofferdam.xyz", "custom_domain": true }],
+  // Only the Access-protected hostname: a workers.dev URL would skip Access (the Worker still refuses it).
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "lockkeeper.cofferdam.xyz", "custom_domain": true }],
 
-  // The dashboard is a Next.js static export; the Worker answers /api first.
-  "assets": {
-    "directory": "../dashboard/out",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health"]
-  },
+  // The poller: GitHub every five minutes, no public ingress, no webhook secret.
+  "triggers": { "crons": ["*/5 * * * *"] },
 
   "vars": {
-    // Account that owns the AI Gateway and the Artifacts namespace.
-    "AI_GATEWAY_ACCOUNT_ID": "b4d6490fc23c08e8117f0eaa1b82997d",
-    "AI_GATEWAY_ID": "default",
-    "ARTIFACTS_NAMESPACE": "lockkeeper",
-    // Pinned toolchain inside the agent sandbox snapshot.
-    "CLAUDE_CODE_VERSION": "2.1.296"
+    "ENVIRONMENT": "production",
+    // Set after the founder creates the GitHub App (its numeric App ID; not a secret).
+    "GITHUB_APP_ID": "5420783",
+    "ACCESS_TEAM_DOMAIN": "https://cofferdam.cloudflareaccess.com",
+    // The Access application's AUD tag (Zero Trust → Access → Applications → lockkeeper). Empty: every request is refused.
+    "ACCESS_AUD": "19686bd1266bfab6d8e37eab2d961758383a44d238823551326b3f2dc0050fd8"
   },
-  "secrets": { "required": ["AI_GATEWAY_TOKEN", "DASHBOARD_TOKEN"] },
+  "secrets": { "required": ["GITHUB_APP_PRIVATE_KEY"] },
 
-  "artifacts": [{ "binding": "ARTIFACTS", "namespace": "lockkeeper" }],
   "ai": { "binding": "AI" },
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "lockkeeper-index" }],
+  // wrangler vectorize create lockkeeper-cofferdam --dimensions=1024 --metric=cosine
+  // wrangler vectorize create-metadata-index lockkeeper-cofferdam --property-name=repo --type=string
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "lockkeeper-cofferdam" }],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "lockkeeper",
-      "database_id": "c3a899b7-94bc-4061-9fa4-d53cce751d42",
+      "database_name": "lockkeeper-cofferdam",
+      // wrangler d1 create lockkeeper-cofferdam, then paste its id here.
+      "database_id": "c0ab35c8-9e4b-4d2e-98ed-b637aecff31b",
       "migrations_dir": "migrations"
     }
-  ],
-  "queues": {
-    "consumers": [
-      { "queue": "lockkeeper-events", "max_batch_size": 10, "max_batch_timeout": 5, "max_retries": 3 }
-    ]
-  },
-  "workflows": [
-    { "binding": "MERGE_WORKFLOW", "name": "lockkeeper-merge", "class_name": "MergeWorkflow" }
-  ],
-  "durable_objects": {
-    "bindings": [
-      { "name": "SANDBOX", "class_name": "AgentSandbox" },
-      { "name": "LIVE", "class_name": "LiveHub" }
-    ]
-  },
-  // Managed image (cloudflare/debian-trixie) plus a bootstrap snapshot: no Docker needed.
-  "containers": [{ "class_name": "AgentSandbox", "scheduling_policy": "durable_object" }],
-  "exports": {
-    "AgentSandbox": { "type": "durable-object", "storage": "sqlite" },
-    "LiveHub": { "type": "durable-object", "storage": "sqlite" }
-  }
+  ]
 }

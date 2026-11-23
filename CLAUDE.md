@@ -11,8 +11,8 @@ present, and the `rules/<area>.md` for the area you touch.
 
 ## Validate here
 
-`pnpm -r check` and `pnpm -r test`. Deploys (`pnpm deploy`) are the founder's,
-from the Mac.
+`pnpm check` and `pnpm test`. Deploys (`pnpm run deploy`; a bare `pnpm deploy` is
+pnpm's own command, not the script) are the founder's, from the Mac.
 
 ## Delegated git (cloud session, Projects thread, Lockkeeper)
 

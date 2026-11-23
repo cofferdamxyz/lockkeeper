@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A stdio MCP server that forwards to Lockkeeper's HTTP MCP endpoint (DESIGN.md §13 step 2).
+// A stdio MCP server that forwards to Lockkeeper's HTTP MCP endpoint (DESIGN.md, "The stdio proxy").
 //
 // Claude Code can talk to an HTTP MCP server directly, but its headers must then be literal or
 // come from the process environment, and a desktop-app session has no shell that loaded the

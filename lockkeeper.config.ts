@@ -1,26 +1,6 @@
-// Per-organisation configuration. Non-secret. Secrets go through `wrangler secret put`.
-export interface ProjectConfig {
-  /** Short id used in URLs and the ledger. */
-  id: string;
-  /** Artifacts repository name inside the deployment's namespace. */
-  repo: string;
-  /** GitHub repository that mirrors `main`, as owner/name. Optional. */
-  github?: string;
-  defaultBranch: string;
-  /** Path, inside the repository, of the conventions file agents read first. */
-  conventions: string;
-  /** Command the harness and the merge sandbox run before a change is ready or merged. */
-  test: string;
-  /** How a decided change reaches the system of record. `advise` lives in `advise` below: no runner, no merge. */
-  mergeMode: "mirror" | "pull-request";
-}
-
-/**
- * The advisory deployment (`worker/wrangler.cofferdam.jsonc`, DESIGN.md §12–§13): it reads GitHub
- * through its own GitHub App, keeps the index and claims, and advises. It never launches an agent
- * and never merges, so nothing here names a sandbox, a fork or a merge mode.
- */
-export interface AdviseConfig {
+// Lockkeeper's configuration: non-secret, typed, one deployment per organisation. Secrets go
+// through `wrangler secret put` (DESIGN.md, "Access and identity").
+export interface LockkeeperConfig {
   /** GitHub organisation (or user) the App is installed on. */
   owner: string;
   /** Repositories (names, without the owner) the App can see but the index skips. Empty: all of them. */
@@ -37,7 +17,7 @@ export interface AdviseConfig {
   nearCosine: number;
   /** Window for "landed on main recently" in briefs. */
   recentHours: number;
-  /** Step 3 of DESIGN.md §13: Clef's advice on the open pull requests. */
+  /** Clef's advice on the open pull requests (DESIGN.md, "The advising pass"). */
   advice: {
     /** Write the advice as one comment per candidate pull request (needs pull-request write on the App). */
     comment: boolean;
@@ -49,92 +29,63 @@ export interface AdviseConfig {
    * issues live in one repository. A branch that does not match is bound to nothing.
    */
   issues: { repo: string; branch: string };
-}
-
-export interface LockkeeperConfig {
-  projects: ProjectConfig[];
-  advise: AdviseConfig;
   clef: {
-    /** `clef` for the merge decision; `clef-flash` is enough for cheap, frequent questions. */
+    /** `clef` for the landing decision; `clef-flash` is enough for cheap, frequent questions. */
     model: "clef" | "clef-flash";
-    /** Minimum P(yes) for an unattended merge. */
+    /** Minimum P(yes) for a pull request to read as unattended-eligible. */
     unattended: number;
-    /** Minimum P(yes) after a resolver agent touched the change. */
-    unattendedAfterResolve: number;
-    /** Maximum probability-weighted risk (0 = none, 3 = critical) for an unattended merge. */
+    /** Maximum probability-weighted risk (0 = none, 3 = critical) for the same verdict. */
     maxRisk: number;
-    /** Largest ready set sent to Clef in one request. */
+    /** Largest set of open pull requests sent to Clef in one request. */
     maxCandidates: number;
   };
-  agents: {
-    model: string;
-    /** Hard cap on the agent's own task run, in minutes. */
-    maxMinutes: number;
-    /** Hosts the sandbox may reach; the outbound gateway rejects everything else. */
-    allowedHosts: string[];
-  };
 }
 
+// Cofferdam's deployment (workspace decision 0053). The sensitive list names the real paths
+// (corrected 2026-10-22: the decision's `cofferdam-api/src/auth/**` matched nothing): the plane's
+// session attestation, authority checks, ceremonies, Self binding, user operations and relay; the
+// whole attester; the app's passkey, recovery phrase and wallet; the contracts; every Worker
+// config and the OS deployment and deploy script; every CI workflow, because CI is the evidence
+// and a change to it must never go unattended; and Lockkeeper's own source and this file, because
+// the guard test over its GitHub writes is a tripwire, not a proof.
 const config: LockkeeperConfig = {
-  projects: [
-    {
-      id: "sample-api",
-      repo: "sample-api",
-      defaultBranch: "main",
-      conventions: "AGENTS.md",
-      test: "npm install --no-audit --no-fund --silent && npm test",
-      mergeMode: "mirror",
-    },
+  owner: "cofferdamxyz",
+  exclude: ["cofferdam-prover"],
+  sensitive: [
+    "cofferdam-api/src/env.ts",
+    "cofferdam-api/src/services/sessionAttestation.ts",
+    "cofferdam-api/src/services/authorityCheck.ts",
+    "cofferdam-api/src/services/ceremony.ts",
+    "cofferdam-api/src/services/selfBind.ts",
+    "cofferdam-api/src/services/userOp.ts",
+    "cofferdam-api/src/services/relaySend.ts",
+    "cofferdam-api/src/routes/ceremony.ts",
+    "cofferdam-api/src/routes/session.ts",
+    "cofferdam-api/src/routes/aa.ts",
+    "cofferdam-api/src/routes/self.ts",
+    "cofferdam-attester/**",
+    "cofferdam-app/src/lib/passkey.ts",
+    "cofferdam-app/src/lib/recoveryPhrase.ts",
+    "cofferdam-app/src/lib/wallet.ts",
+    "base-contracts/**",
+    "**/wrangler.jsonc",
+    "**/.github/workflows/**",
+    "cofferdam-os/deployment.jsonc",
+    "cofferdam-os/scripts/**",
+    "lockkeeper/worker/src/**",
+    "lockkeeper/lockkeeper.config.ts",
   ],
+  staleDays: 14,
+  claims: { defaultMinutes: 60, maxMinutes: 240 },
+  nearCosine: 0.6,
+  recentHours: 24,
+  advice: { comment: true, retryHours: 6 },
+  issues: { repo: "cofferdam", branch: "^claude/(\\d+)-" },
   clef: {
     model: "clef",
     unattended: 0.8,
-    unattendedAfterResolve: 0.9,
     maxRisk: 1.0,
     maxCandidates: 20,
-  },
-  // Cofferdam's advisory deployment (workspace decision 0053). The sensitive list names the real
-  // paths (corrected 2026-10-22: the decision's `cofferdam-api/src/auth/**` matched nothing):
-  // the plane's session attestation, authority checks, ceremonies, Self binding, user operations
-  // and relay; the whole attester; the app's passkey, recovery phrase and wallet; the contracts;
-  // every Worker config and the OS deployment and deploy script; and every CI workflow, because
-  // CI is the evidence and a change to it must never go unattended.
-  advise: {
-    owner: "cofferdamxyz",
-    exclude: ["cofferdam-prover"],
-    sensitive: [
-      "cofferdam-api/src/env.ts",
-      "cofferdam-api/src/services/sessionAttestation.ts",
-      "cofferdam-api/src/services/authorityCheck.ts",
-      "cofferdam-api/src/services/ceremony.ts",
-      "cofferdam-api/src/services/selfBind.ts",
-      "cofferdam-api/src/services/userOp.ts",
-      "cofferdam-api/src/services/relaySend.ts",
-      "cofferdam-api/src/routes/ceremony.ts",
-      "cofferdam-api/src/routes/session.ts",
-      "cofferdam-api/src/routes/aa.ts",
-      "cofferdam-api/src/routes/self.ts",
-      "cofferdam-attester/**",
-      "cofferdam-app/src/lib/passkey.ts",
-      "cofferdam-app/src/lib/recoveryPhrase.ts",
-      "cofferdam-app/src/lib/wallet.ts",
-      "base-contracts/**",
-      "**/wrangler.jsonc",
-      "**/.github/workflows/**",
-      "cofferdam-os/deployment.jsonc",
-      "cofferdam-os/scripts/**",
-    ],
-    staleDays: 14,
-    claims: { defaultMinutes: 60, maxMinutes: 240 },
-    nearCosine: 0.6,
-    recentHours: 24,
-    advice: { comment: true, retryHours: 6 },
-    issues: { repo: "cofferdam", branch: "^claude/(\\d+)-" },
-  },
-  agents: {
-    model: "claude-sonnet-5-5",
-    maxMinutes: 25,
-    allowedHosts: ["gateway.ai.cloudflare.com", "registry.npmjs.org"],
   },
 };
 

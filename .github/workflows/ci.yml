@@ -42,8 +42,6 @@ jobs:
         run: pnpm check
       - id: test
         run: pnpm test
-      - id: build
-        run: pnpm build
 
       # On a pull request, one comment with the result of every step and the
       # run URL, updated in place on every run. The Cofferdam Development
@@ -62,7 +60,6 @@ jobs:
             install=pnpm install --frozen-lockfile
             check=pnpm check
             test=pnpm test
-            build=pnpm build
         with:
           script: |
             const marker = `<!-- cofferdam-ci:${context.job} -->`;
@@ -73,7 +70,7 @@ jobs:
               return { label: label.join('='), outcome: steps[id]?.outcome ?? 'skipped' };
             });
             // Passed only when the whole job succeeded and every listed step ran
-            // and passed: a failed setup step skips them all, and four skipped
+            // and passed: a failed setup step skips them all, and three skipped
             // rows must never read as green.
             const failed = process.env.JOB_STATUS !== 'success' || rows.some((row) => row.outcome !== 'success');
             const sha = context.payload.pull_request.head.sha;

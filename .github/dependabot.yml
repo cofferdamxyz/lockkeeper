@@ -6,7 +6,7 @@
 # it is proposed here. A Dependabot commit carries no sign-off: the founder lands it with
 # `git cherry-pick -s`, not by fast-forward.
 version: 2
-# pnpm workspaces (worker, dashboard, sample-api) are read from the root manifest.
+# The pnpm workspace (worker) is read from the root manifest.
 updates:
   - package-ecosystem: npm
     directory: /
