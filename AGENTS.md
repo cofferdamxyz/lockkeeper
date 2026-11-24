@@ -41,6 +41,13 @@ tag `competition-runner-final`. Do not bring any of it back.
   for sessions whose environment did not load the `.envrc`) and example
   settings and MCP config through which Claude Code sessions read
   Lockkeeper.
+- `docs/diagrams/` — the README's four diagrams, as rendered PNGs. They
+  are copies: the source is `social/diagrams/lockkeeper/render.py` in
+  `cofferdam-branding`, which draws them from the brand tokens with the
+  builder of the XMTP article. Never edit a PNG here; when a fact a
+  diagram states changes in `DESIGN.md` (the poll's five minutes, the
+  cosine of 0.6, the comment's wording), change the script, render and
+  copy the four files over.
 - `lockkeeper.config.ts` — the per-organisation configuration: owner,
   excluded repositories, the sensitive-path list, claim times, whether
   advice is commented, how a branch names its issue, Clef's thresholds.

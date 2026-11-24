@@ -409,6 +409,12 @@ the bge-m3 index and the decision ledger.
 
 ## Change log
 
+- 2026-11-23: `README.md` rewritten for a reader who has never seen
+  Lockkeeper: why it is useful, how it works in four diagrams
+  (`docs/diagrams/`, rendered from `cofferdam-branding`'s
+  `social/diagrams/lockkeeper/render.py`), and how to integrate it from
+  Claude Code, from any agent over HTTP and from a tracker. It names the
+  CI comment a self-hoster's CI must keep. No behaviour changed.
 - 2026-11-23: the competition runner removed (Cofferdam workspace
   decision 0092): the agent sandbox, the Artifacts forks, the outbound
   gateway, the merge Workflow and its sandbox, the queue consumer, the
