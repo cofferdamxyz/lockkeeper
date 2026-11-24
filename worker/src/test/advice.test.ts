@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { advise, landingOrder, landingText, MARKER, type Clef } from "../advice";
+import { advise, decide, landingOrder, landingText, MARKER, MAX_COMPARE_FILES, type Clef } from "../advice";
 import { issueFromBranch } from "../issues";
 import { poll } from "../poll";
 import { getAdvice, getOutcomes } from "../store";
@@ -290,7 +290,7 @@ describe("the advising pass", () => {
     const { gh } = world();
     const fetcher = fakeFetch(gh);
     await poll(env, { fetcher });
-    await advise(env, { fetcher, clef: good, settings: { ...config, advice: { comment: false, retryHours: 6 } } });
+    await advise(env, { fetcher, clef: good, settings: { ...config, advice: { ...config.advice, comment: false } } });
     expect(gh.calls.filter((c) => c.startsWith("POST /repos"))).toEqual([]); // comments off: nothing written
     const text = landingText(await landingOrder(env));
     expect(text).toContain('1. #3 (draft) "Christmas overlay"');
@@ -342,5 +342,23 @@ describe("what moved under a branch", () => {
     expect(movedSince("a", recent)).toEqual({ files: ["new.ts", "mid.ts", "old.ts"], found: true });
     expect(movedSince("zzz", recent)).toEqual({ files: ["new.ts", "mid.ts", "old.ts"], found: false });
     expect(movedSince("zzz", [])).toEqual({ files: [], found: false });
+  });
+});
+
+describe("a compare GitHub cut short", () => {
+  const candidate = (files: number) => ({
+    branch: {
+      repo: "cofferdamxyz/cofferdam-api", name: "big", head_sha: "a".repeat(40), base_sha: "b".repeat(40), ahead: 1, behind: 0,
+      files: Array.from({ length: files }, (_, i) => `src/f${i}.ts`), commits: [], author: null, last_commit_at: null,
+      pr_number: 5, pr_title: "big", pr_url: null, pr_draft: false, ci: "pass", sensitive: [], updated_at: "",
+    },
+    number: 5, ageMinutes: 10, overlaps: [], stale: [], baseUnknown: false,
+  });
+  it("is never unattended-eligible: a sensitive path may be among the files not listed", () => {
+    const [atLimit] = decide([candidate(MAX_COMPARE_FILES)] as never, null, config.clef);
+    expect(atLimit.eligible).toBe(false);
+    expect(atLimit.reasons.join("; ")).toContain("300 files or more, so not all of them are known");
+    const [under] = decide([candidate(MAX_COMPARE_FILES - 1)] as never, null, config.clef);
+    expect(under.reasons.join("; ")).not.toContain("not all of them are known");
   });
 });

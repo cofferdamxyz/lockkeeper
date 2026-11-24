@@ -258,10 +258,13 @@ export interface Verdict {
   label: string | null;
 }
 
+/** What GitHub's compare lists at most. A branch at this size is never unattended-eligible. */
+export const MAX_COMPARE_FILES = 300;
+
 const finite = (v: number | undefined): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /** Clef's answers and the house rules, as one verdict per candidate in landing order. */
-export function decide(candidates: Candidate[], raw: unknown, thresholds: LockkeeperConfig["clef"]): Verdict[] {
+export function decide(candidates: Candidate[], raw: unknown, thresholds: LockkeeperConfig["clef"], sensitiveLabel: string | null = config.advice.sensitiveLabel): Verdict[] {
   const ids = candidates.map((c) => prId(c.number));
   const d = raw == null ? null : parseDecision(raw, ids);
   const p = (c: Candidate) => finite(d?.nextProbabilities[prId(c.number)]);
@@ -276,6 +279,8 @@ export function decide(candidates: Candidate[], raw: unknown, thresholds: Lockke
     const risk = finite(d?.risk[prId(c.number)]);
     const reasons: string[] = [];
     if (b.sensitive.length) reasons.push(`touches sensitive paths (${tick(b.sensitive)})`);
+    // GitHub lists at most 300 files of a compare: past that, a sensitive path may be among those not listed.
+    if (b.files.length >= MAX_COMPARE_FILES) reasons.push(`it changes ${MAX_COMPARE_FILES} files or more, so not all of them are known`);
     if (b.ci === "fail") reasons.push("CI failed on its head");
     else if (b.ci === "pending") reasons.push("CI has not reported on its head yet");
     else if (b.ci === "none") reasons.push("no CI result on its head");
@@ -296,7 +301,7 @@ export function decide(candidates: Candidate[], raw: unknown, thresholds: Lockke
       risk,
       eligible: reasons.length === 0,
       reasons,
-      label: b.sensitive.length ? "security" : null,
+      label: b.sensitive.length ? sensitiveLabel : null,
     };
   });
 }
@@ -449,7 +454,7 @@ async function adviseRepo(
     report.errors.push(`${repo}: decision not recorded: ${err instanceof Error ? err.message : String(err)}`),
   );
 
-  const verdicts = decide(candidates, raw, thresholds);
+  const verdicts = decide(candidates, raw, thresholds, settings.advice.sensitiveLabel);
   const rows: AdviceRow[] = verdicts.map((v) => {
     const c = candidates.find((x) => x.number === v.number) as Candidate;
     const old = previous.find((p) => p.branch === c.branch.name && p.pr_number === c.number);

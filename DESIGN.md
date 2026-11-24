@@ -52,12 +52,14 @@ record of what they actually landed is what the thresholds are later
 checked against.
 
 Lockkeeper holds no credential that could change a repository's code:
-its GitHub App has metadata and contents read and pull-request write, and
+its GitHub App has metadata, contents and checks read and pull-request
+write, and
 the Worker binds no container, Workflow, queue, Durable Object or
 service. `worker/test/guard.test.ts` fails if the Wrangler config binds
 one or if the source spells a write to GitHub other than the token
 request and the advice comment. The guard is a tripwire, not a proof, so
-`worker/src/**` and `lockkeeper.config.ts` are on the sensitive list.
+`worker/src/**` and `lockkeeper.config.ts` are on Cofferdam's sensitive
+list.
 
 ## 3. Components
 
@@ -69,7 +71,7 @@ request and the advice comment. The guard is a tripwire, not a proof, so
 | Index | Vectorize (1024 dimensions, cosine) + Workers AI `@cf/baai/bge-m3` | One vector per branch in flight and per claim; similarity where no path is shared |
 | Clef | Workers AI `@cf/cloudflare/clef` | `choice` (next), `noul` (may it land unattended), `score` (risk to the others) |
 | Access | Cloudflare Access in front of the hostname | Who may ask; the Worker verifies the assertion again |
-| GitHub App | Lockkeeper's own App on the organisation | Reads; writes the advice comment |
+| GitHub App | Lockkeeper's own App on the organisation | Reads repositories, pull requests and check runs; writes the advice comment |
 | Claude Code pieces | `claude-code/` | The hooks and the stdio MCP proxy a session runs |
 
 Bindings: `DB` (D1), `VECTORIZE`, `AI`. Vars: `ENVIRONMENT`,
@@ -91,11 +93,61 @@ branch whose head moved (files, ahead, behind, merge base, commit first
 lines) and one compare when the default branch moved, recorded in
 `main_moves` for "landed recently".
 
-CI comes from the one comment per job that Cofferdam CI keeps on each
-pull request (`<!-- cofferdam-ci:<job> -->`), because the App reads no
-check runs: `pass` when every job reported on the head, `fail` when one
-failed, `pending` while one still names an older head. The poller never
-reads Lockkeeper's own comment as a CI report.
+CI on a pull request's head is read from every source `ci.sources`
+names, and every one must agree for the head to be green
+(`worker/src/ci.ts`): it is `pass` only when each source asked says
+`pass`. One `fail` makes it `fail`, one `pending` makes it `pending`,
+and a source with nothing to say about the head holds it at `none`, so a
+success from one source never stands in for the silence of another.
+
+- `checks`: the head's check runs, which is what GitHub Actions and most
+  CI apps write. The state is the worst of the runs that count: `fail`
+  when one completed without success (failure, timed out, cancelled,
+  action required), `pending` while one is still queued or running,
+  `pass` when at least one succeeded and none failed or is pending. Runs
+  that were skipped or neutral say nothing, so a head whose runs were all
+  skipped is never green. Two rules keep one stray success from reading
+  as green. `ci.requireChecks` names the runs that must have succeeded on
+  the head, so a head the CI never ran on (`[skip ci]`, a paths filter, a
+  merge conflict) is `pending` whatever a deploy app or a scanner
+  reported; without it any single success is enough. And a head with more
+  runs than the three pages of a hundred Lockkeeper reads is `pending`,
+  because a failure may sit on a page not read. `ci.ignoreChecks` names
+  runs that never count. The App needs Checks read.
+- `comment`: one comment per CI job on the pull request. It opens with
+  `ci.commentMarker` and the job's name
+  (`<!-- cofferdam-ci:<job> -->` at Cofferdam), and its heading reads
+  ``### CI ✅ passed · `<job>` on <sha7>`` or `❌ failed`, posted by a bot
+  and updated in place: `pass` when every job reported on the head,
+  `fail` when one failed, `pending` while one still names an older head,
+  or when the pull request has more comments than the three hundred
+  read. The poller never reads Lockkeeper's own comment as a CI report.
+
+GitHub answers a request for check runs from an App without Checks read
+with 403 "Resource not accessible by integration". That is a refusal,
+not "no CI": the poller stops asking for the rest of the pass and for
+`ci.retryHours` (6) after it, says so in the poll report's `notes` on
+every poll until GitHub answers, and the head is judged by the other
+sources. A poll someone asks for (`POST /v1/poll`) tries again at once,
+and the pause ends the first time GitHub answers a request for check
+runs, not before: a poll that had no pull request to ask about changes
+nothing. Only those words, on that request, count as a refusal. Any
+other 403 (a rate limit, abuse detection, an IP allow list) fails that
+repository's poll like any other call, so a pause never swaps what the
+check runs said for what another source says.
+
+Cofferdam reads both. Until its App is granted Checks read GitHub
+refuses, and the comment alone answers, as before. From the grant on, a
+head is green only when the CI job's comment says passed and the check
+runs say passed too; a head the CI never commented on is never green,
+whatever another app's check reported. Should GitHub refuse the check
+runs again later (the permission withdrawn), the comment alone decides
+again, as it does today.
+
+A state is evidence about one head. When a head moves the row starts
+from `none`, never from what was read on the head before it; and on a
+quiet poll, where the branch scan is skipped, nothing is read for a row
+whose head the pull request has already left.
 
 A branch is embedded when its head moves, from its repository, name, pull
 request title, last commit first lines and files. Deleted or fully merged
@@ -152,7 +204,7 @@ Development Tracker's Present column.
 | `GET /v1/inflight?…` | The same as JSON |
 | `POST /v1/check` `{repo, base, paths, branch}` | What moved since `base`, the collisions, other work on those files |
 | `POST /v1/claims` `{repo, paths, goal, branch?, session?, ttl_minutes?}` | Takes a claim and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
-| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's and the last advising pass's reports |
+| `POST /v1/poll`, `GET /v1/status` | Polls now, asking for check runs again even while they are paused (§4); the last poll's and the last advising pass's reports |
 | `GET /v1/advice?repo=` | The landing order per repository |
 | `GET /v1/present?repo=` | Branches, overlaps, claims and the landing order in one read |
 | `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
@@ -186,7 +238,9 @@ to Clef per repository.
   probabilities; what it did not rank follows the rules (green CI, least
   overlap, oldest). A candidate is unattended-eligible only when nothing
   below holds: it touches a sensitive path (which also suggests the
-  `security` label); CI did not pass on its head; it shares a file with
+  `security` label); it changes 300 files or more, which is all GitHub's
+  compare lists, so a sensitive path may be among those not listed; CI
+  did not pass on its head; it shares a file with
   another open pull request; the default branch changed one of its files
   after its base, or it is behind from a base older than the record of the
   default branch's moves (fourteen days, twenty moves), so what changed
@@ -235,8 +289,9 @@ the secret `GITHUB_APP_PRIVATE_KEY`, in GitHub's own PKCS#1 form (the
 Worker wraps it into PKCS#8 for WebCrypto). The Worker signs a
 nine-minute App JWT, finds the installation on the organisation, and
 mints an installation token, held in memory until five minutes before it
-expires. Permissions: metadata read, contents read, pull requests read
-and write (for the advice comment). No webhook.
+expires. Permissions: metadata read, contents read, checks read (for CI
+on a head, §4), pull requests read and write (for the advice comment).
+No webhook.
 
 **Secrets.** `GITHUB_APP_PRIVATE_KEY` through `wrangler secret put`,
 nothing else. An Access service token lives with the client that uses it
@@ -261,6 +316,14 @@ desktop-app session has no shell that loaded the workspace `.envrc`, so
 an HTTP MCP entry with `${VAR}` headers would send empty headers there;
 run under `direnv exec <workspace>`, the proxy reads the token at start
 and nothing secret is written into a settings file.
+
+Both scripts carry the service token on every request, so both are strict
+about where it goes. Neither has a default host: without
+`LOCKKEEPER_URL` the proxy answers every request with an error and the
+hook says nothing. The URL must be https (plain http only on the loopback
+address, for local development) and carry no credentials, or it counts
+as unset. Neither follows a redirect. The guard test fails if a host is
+ever written into either, or into the example configs.
 
 ### The hooks
 
@@ -301,7 +364,7 @@ outcomes, which are the calibration record.
 | `advice` | The advice in force per candidate: position, Clef's numbers, verdict, reasons, the comment's body and id | Rebuilt when candidates move |
 | `decisions` | Every request to Clef with its answer or error | 90 days |
 | `outcomes` | What the advice said when a candidate left, and what happened to it | Kept |
-| `settings` | The poll lease, the last reports, per-repository fingerprints | — |
+| `settings` | The poll lease, the last reports, per-repository fingerprints, until when comments and check runs are paused after a refusal | — |
 
 Vectorize holds one vector per branch (`b:<hash>`, since branch names
 outgrow the 64-byte id) and per claim (`c:<id>`), with `repo`, `kind` and
@@ -309,27 +372,50 @@ outgrow the 64-byte id) and per claim (`c:<id>`), with `repo`, `kind` and
 
 ## 11. Configuration
 
-`lockkeeper.config.ts` at the repository root, typed and non-secret:
+Two files hold an organisation's values, and nothing a deployment runs
+or copies names one besides them: `lockkeeper.config.ts` at the
+repository root (typed, non-secret) and `worker/wrangler.jsonc` (the
+deployment's names, ids and hostname). The
+keys and their defaults are in `worker/src/config.ts`; the root file
+calls `defineConfig` with the organisation's `owner` and whatever differs,
+merged one level deep, and a list given there replaces the default list.
+The smallest configuration is `defineConfig({ owner: "your-org" })`. The
+guard test fails if Cofferdam's name appears under `worker/src/`, in the
+hook, the proxy, the example configs or the package files. Test fixtures
+and this repository's own CI workflow carry that name as data.
 
 - `owner` and `exclude`: the organisation the App is installed on, and
   repositories the index skips;
 - `sensitive`: globs, `<repo>/<path>`, a change may never touch and still
-  be unattended-eligible. Cofferdam's list names the plane's session
+  be unattended-eligible. The default is every `.github/workflows/**`,
+  because CI is the evidence: a pull request that edits its own workflow
+  can make any check green. Cofferdam's list names the plane's session
   attestation, authority checks, ceremonies, passport binding, user
   operations, relay and `env.ts`, with their routes; the whole attester;
   the app's passkey, recovery phrase and wallet modules;
   `base-contracts/**`; every `wrangler.jsonc`; the OS `deployment.jsonc`
-  and `scripts/**`; every `.github/workflows/**`, because CI is the
-  evidence and a change to it must never go unattended; and Lockkeeper's
-  own `worker/src/**` and this file;
+  and `scripts/**`; every CI workflow; and Lockkeeper's own
+  `worker/src/**` and this file;
 - `staleDays`, `claims` (default and maximum minutes), `nearCosine`,
   `recentHours`;
-- `advice`: whether the advice is commented, and how long to wait after a
-  refusal;
+- `advice`: whether the advice is commented, how long to wait after a
+  refusal, and the label it suggests for a change on a sensitive path
+  (`security`; null suggests none);
+- `ci`: the sources (default `checks` alone; Cofferdam `checks` and
+  `comment`), the check runs that must have succeeded and those that
+  never count, the comment's marker and how long to wait after GitHub
+  refuses check runs (§4);
 - `issues`: the repository that holds the issues and the pattern by which
-  a branch names one;
+  a branch names one, or null to bind none (the default; Cofferdam binds
+  `claude/<issue>-<slug>` to `cofferdam`);
 - `clef`: the model (`clef` or `clef-flash`), the `unattended` and
   `maxRisk` thresholds, `maxCandidates`.
+
+The Worker's tests run against a fixture
+(`worker/src/test/lockkeeper.config.fixture.ts`, which `vitest.config.ts`
+resolves in place of the root file), so editing the root file for an
+organisation never breaks them; `worker/test/config.test.ts` checks the
+root file itself is well formed.
 
 ## 12. Deployment
 
@@ -350,8 +436,9 @@ are the founder's, from the Mac; the record is in the Cofferdam workspace,
 Another organisation deploys it by creating its own GitHub App and Access
 application, a D1 database and a Vectorize index, editing
 `worker/wrangler.jsonc` (names, ids, hostname, `GITHUB_APP_ID`,
-`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`) and `lockkeeper.config.ts`, setting
-the one secret and running `pnpm run deploy`. `README.md` has the commands.
+`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`) and replacing `lockkeeper.config.ts`
+with its own, setting the one secret and running `pnpm run deploy`. No
+source file changes. `README.md` has the commands.
 
 ## 13. Planned
 
@@ -397,9 +484,33 @@ the bge-m3 index and the decision ledger.
 
 - Clef starts uncalibrated here. Conservative thresholds and the fact
   that nothing lands unattended cover that until outcomes accumulate.
-- CI is read from a comment convention, not from check runs. A repository
-  whose CI does not keep the `cofferdam-ci` comment reads as `none`, and
-  its pull requests are never eligible.
+- Check runs count whoever made them. In the safe direction: a check
+  that is not required and fails makes CI `fail` until it is named in
+  `ci.ignoreChecks`. In the other: with `ci.requireChecks` empty, one
+  success from any check makes a head green, even where the CI itself did
+  not run. An organisation that reads `checks` alone should name its CI
+  job there.
+- Legacy commit statuses are not read. A failing status beside a green
+  check run reads `pass`. No repository of Cofferdam's uses them.
+- A repository with no CI source that answers reads as `none`, and its
+  pull requests are never eligible.
+- Anyone who can push a workflow to any branch can write a green result
+  onto another head: a job whose token has checks write can create a
+  successful check run on any commit of the repository, and one with
+  pull-requests write can post the CI comment. That takes push access and
+  is no easier than before check runs were read, but it does not touch a
+  workflow file in the pull request it greens, so the sensitive list does
+  not see it. Nothing lands unattended, which is what covers it.
+- A pull request's own workflow run can be made green by the pull request
+  itself. That is why every `.github/workflows/**` is sensitive by
+  default, and why an organisation that replaces the list should keep it.
+  The glob covers Actions workflow files only: a composite action under
+  `.github/actions/`, another CI system's definition and the scripts a
+  job runs are an organisation's to add.
+- The sensitive list sees what GitHub's compare lists, which is at most
+  300 files. A renamed file counts under both names, and a branch at 300
+  files is never eligible, but the order in which GitHub cuts a longer
+  list was not tested.
 - The poll is up to five minutes old. The check before a push reads
   GitHub live for that reason; the brief does not.
 - Vectorize upserts are visible after seconds, not instantly; a claim
@@ -409,6 +520,25 @@ the bge-m3 index and the decision ledger.
 
 ## Change log
 
+- 2026-11-23: CI is read from the head's check runs as well as the CI
+  comment, and both must agree (Cofferdam workspace decision 0095):
+  `ci` in the configuration (`sources`, `requireChecks`, `ignoreChecks`;
+  every source named must say passed),
+  `worker/src/ci.ts`, a refusal reported and paused, never read as "no
+  CI". The App gains Checks read. Fixed on the way, each found by a
+  review in a fresh context: a state read on one head is no longer
+  carried onto the next when the read of CI fails; the CI comment's
+  marker must open the comment; a renamed file counts under its old name
+  too and a branch at GitHub's 300-file limit is never eligible; a landed
+  branch is no longer written back by the poll that removes it; the hook
+  and the proxy refuse plain http off this machine and never follow a
+  redirect. An organisation's values
+  left the source: `worker/src/config.ts` holds the keys and defaults,
+  `lockkeeper.config.ts` only Cofferdam's values through `defineConfig`;
+  the comment marker, the suggested label, the issue binding and the MCP
+  server's wording come from it; the tests run on a fixture; the proxy
+  and the example config have no default host; `db:migrate` names the D1
+  binding. The guard test fails on an organisation's name in the source.
 - 2026-11-23: `README.md` rewritten for a reader who has never seen
   Lockkeeper: why it is useful, how it works in four diagrams
   (`docs/diagrams/`, rendered from `cofferdam-branding`'s

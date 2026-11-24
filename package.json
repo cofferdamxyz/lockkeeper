@@ -7,7 +7,7 @@
   },
   "scripts": {
     "check": "pnpm -r check",
-    "test": "pnpm -r test && node --test claude-code/hooks/lockkeeper.test.mjs",
+    "test": "pnpm -r test && node --test claude-code/hooks/lockkeeper.test.mjs claude-code/mcp-stdio.test.mjs",
     "deploy": "pnpm --filter worker deploy",
     "dev": "pnpm --filter worker dev",
     "db:migrate": "pnpm --filter worker db:migrate"

@@ -1,7 +1,7 @@
 import config, { type LockkeeperConfig } from "../../lockkeeper.config";
 import { jaccard } from "./vectors";
 import type { LockkeeperEnv } from "./env";
-import { GitHub, type Fetch } from "./github";
+import { changedPaths, GitHub, type Fetch } from "./github";
 import { issueFromBranch } from "./issues";
 import { firstLine } from "./poll";
 import { sensitiveHits, sharedPaths } from "./paths";
@@ -123,7 +123,7 @@ export async function check(env: LockkeeperEnv, q: CheckInput, opts: { fetcher?:
   const defaultBranch = flight.defaultBranch ?? "main";
   const gh = new GitHub({ appId: env.GITHUB_APP_ID, privateKey: env.GITHUB_APP_PRIVATE_KEY, owner: settings.owner }, opts.fetcher);
   const cmp = await gh.compare(q.repo, q.base, defaultBranch);
-  const files = (cmp.files ?? []).map((f) => f.filename);
+  const files = changedPaths(cmp);
   const head = cmp.commits.length ? cmp.commits[cmp.commits.length - 1].sha : q.base;
   return {
     defaultBranch,
@@ -196,7 +196,10 @@ export function briefText(f: InFlight, now = new Date()): string {
     const files = [...new Set(f.recent.flatMap((m) => m.files))];
     lines.push(`Landed on ${f.defaultBranch ?? "main"} recently (${files.length} files):`, ...commits.map((c) => `- ${c}`));
   }
-  if (f.sensitive.length) lines.push(`Sensitive paths in your set (never unattended-eligible; suggest the \`security\` label): ${list(f.sensitive)}.`);
+  if (f.sensitive.length) {
+    const label = config.advice.sensitiveLabel ? `; suggest the \`${config.advice.sensitiveLabel}\` label` : "";
+    lines.push(`Sensitive paths in your set (never unattended-eligible${label}): ${list(f.sensitive)}.`);
+  }
   lines.push(PRINCIPLE);
   return lines.join("\n");
 }

@@ -14,7 +14,21 @@
 
 import { createInterface } from "node:readline";
 
-const URL_BASE = (process.env.LOCKKEEPER_URL ?? "https://lockkeeper.cofferdam.xyz").replace(/\/+$/, "");
+/** The origin to talk to: https, or http on this machine only, with no credentials in it. Anything else counts as unset. */
+function safeBase(raw) {
+  try {
+    const u = new URL(raw);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+    if (u.username || u.password) return "";
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) return "";
+    return raw.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+// No default host: a missing URL must never send the service token somewhere it was not meant for.
+const URL_BASE = safeBase(process.env.LOCKKEEPER_URL ?? "");
 const ID = process.env.LOCKKEEPER_ACCESS_CLIENT_ID ?? "";
 const SECRET = process.env.LOCKKEEPER_ACCESS_CLIENT_SECRET ?? "";
 const TIMEOUT_MS = Number(process.env.LOCKKEEPER_TIMEOUT_MS ?? 15000);
@@ -29,14 +43,15 @@ function errorFor(msg, code, text) {
 }
 
 async function forward(msg) {
-  if (!ID || !SECRET) {
-    for (const e of errorFor(msg, -32000, "Lockkeeper is not configured: LOCKKEEPER_ACCESS_CLIENT_ID and LOCKKEEPER_ACCESS_CLIENT_SECRET are missing")) write(e);
+  if (!URL_BASE || !ID || !SECRET) {
+    for (const e of errorFor(msg, -32000, "Lockkeeper is not configured: LOCKKEEPER_URL (https), LOCKKEEPER_ACCESS_CLIENT_ID and LOCKKEEPER_ACCESS_CLIENT_SECRET must all be set")) write(e);
     return;
   }
   let res;
   try {
     res = await fetch(`${URL_BASE}/mcp`, {
       method: "POST",
+      redirect: "error", // a redirect would carry the service token to another host
       signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: {
         "cf-access-client-id": ID,

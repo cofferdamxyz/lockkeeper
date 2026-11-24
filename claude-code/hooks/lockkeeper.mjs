@@ -10,7 +10,7 @@
 // with what landed on main is held once, with the reason, so the session rebases first; the same
 // push again goes through. LOCKKEEPER_PUSH=inform turns that off and only adds context.
 //
-// Environment: LOCKKEEPER_URL (https://lockkeeper.cofferdam.xyz), LOCKKEEPER_ACCESS_CLIENT_ID and
+// Environment: LOCKKEEPER_URL (your deployment's origin), LOCKKEEPER_ACCESS_CLIENT_ID and
 // LOCKKEEPER_ACCESS_CLIENT_SECRET (a Cloudflare Access service token). Node 18 or newer.
 
 import { execFileSync } from "node:child_process";
@@ -19,7 +19,20 @@ import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const URL_BASE = (process.env.LOCKKEEPER_URL ?? "").replace(/\/+$/, "");
+/** The origin to talk to: https, or http on this machine only, with no credentials in it. Anything else counts as unset. */
+function safeBase(raw) {
+  try {
+    const u = new URL(raw);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+    if (u.username || u.password) return "";
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) return "";
+    return raw.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+const URL_BASE = safeBase(process.env.LOCKKEEPER_URL ?? "");
 const ID = process.env.LOCKKEEPER_ACCESS_CLIENT_ID ?? "";
 const SECRET = process.env.LOCKKEEPER_ACCESS_CLIENT_SECRET ?? "";
 const TIMEOUT_MS = Number(process.env.LOCKKEEPER_TIMEOUT_MS ?? 4000);
@@ -60,6 +73,7 @@ export function changedPaths(dir, base, includeWorkingTree) {
 async function call(path, init = {}) {
   const res = await fetch(`${URL_BASE}${path}`, {
     ...init,
+    redirect: "error", // a redirect would carry the service token to another host
     signal: AbortSignal.timeout(TIMEOUT_MS),
     headers: { "cf-access-client-id": ID, "cf-access-client-secret": SECRET, "content-type": "application/json", ...(init.headers ?? {}) },
   });

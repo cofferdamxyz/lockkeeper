@@ -29,8 +29,10 @@ tag `competition-runner-final`. Do not bring any of it back.
 ## Layout
 
 - `worker/` — the Lockkeeper Worker (Hono), deployed with Wrangler.
-  `src/index.ts` is the routes and the cron; `github.ts` the GitHub App
-  client; `poll.ts` the poller; `claims.ts`; `inflight.ts` the in-flight
+  `src/index.ts` is the routes and the cron; `config.ts` the
+  configuration's keys and defaults; `github.ts` the GitHub App client;
+  `poll.ts` the poller; `ci.ts` the state of CI on a head, from check
+  runs or the CI comment; `claims.ts`; `inflight.ts` the in-flight
   answer, the brief and the check; `advice.ts` the advising pass;
   `issues.ts` the issue binding; `present.ts` the one-read answer for the
   OS gatekeeper; `access.ts` Access verification; `mcp.ts` the MCP
@@ -48,14 +50,24 @@ tag `competition-runner-final`. Do not bring any of it back.
   diagram states changes in `DESIGN.md` (the poll's five minutes, the
   cosine of 0.6, the comment's wording), change the script, render and
   copy the four files over.
-- `lockkeeper.config.ts` — the per-organisation configuration: owner,
-  excluded repositories, the sensitive-path list, claim times, whether
-  advice is commented, how a branch names its issue, Clef's thresholds.
-  Secrets never live here.
+- `lockkeeper.config.ts` — the organisation's values and nothing else:
+  owner, excluded repositories, the sensitive-path list, the CI sources,
+  how a branch names its issue, and whatever differs from the defaults
+  in `worker/src/config.ts`. Secrets never live here.
 
 ## Conventions
 
 - Package manager: pnpm (workspace at the root). Never `npm install`.
+- No organisation in the source. `lockkeeper.config.ts` and
+  `worker/wrangler.jsonc` hold Cofferdam's values (test fixtures and
+  `.github/workflows/ci.yml` carry its name as data); a new
+  organisation-specific value becomes a key in `worker/src/config.ts`
+  with a default, never a literal. The same holds for hosts in
+  `claude-code/`: no default URL. `worker/test/guard.test.ts` fails
+  otherwise.
+- Tests in the Workers pool read the fixture
+  `worker/src/test/lockkeeper.config.fixture.ts`, never the root
+  configuration; a test that needs other settings passes them.
 - Names: in flight, claim, brief, check, candidate, landing order,
   unattended-eligible, decision (`DESIGN.md` §1). Lockkeeper advises; it
   is never said to lock, merge or queue anything.

@@ -120,7 +120,10 @@ still decides.
 ## Use it from your tools
 
 Every client reaches Lockkeeper the same way: over HTTPS, with a
-Cloudflare Access service token in two headers. Give each client its own
+Cloudflare Access service token in two headers. The hook and the proxy
+refuse any other scheme (plain http works on the loopback address only)
+and never follow a redirect, so the token goes to the host you named and
+nowhere else. Give each client its own
 token, and set these three variables wherever the client runs:
 
 ```sh
@@ -214,7 +217,7 @@ stateless).
 | `GET /v1/inflight?…` | The same as JSON |
 | `POST /v1/check` `{repo, base, paths, branch?, goal?}` | Before a commit or push: what moved on the default branch since `base` (read live), which files collide, other work on them |
 | `POST /v1/claims` `{repo, goal, paths?, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240; without paths it covers the repository) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
-| `POST /v1/poll`, `GET /v1/status` | Polls now; the last poll's and the last advising pass's reports |
+| `POST /v1/poll`, `GET /v1/status` | Polls now (and asks for check runs again if GitHub had refused them); the last poll's and the last advising pass's reports |
 | `GET /v1/advice?repo=` | The landing order per repository: each open pull request's position, CI, unattended-eligible verdict with its reasons, Clef's numbers, label suggestion and issue |
 | `GET /v1/present?repo=` | One read for a tracker: branches in flight with pull request, CI, issue and overlap on each other, live claims, the landing order |
 | `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
@@ -227,23 +230,32 @@ You need a Cloudflare account with Workers, D1, Vectorize, Workers AI and
 Zero Trust (Access); a GitHub organisation; Node 24 and pnpm.
 
 1. **A GitHub App** on the organisation: webhook off; repository
-   permissions Metadata read, Contents read, Pull requests read and write;
-   installed on the repositories Lockkeeper should watch. Note the App ID
+   permissions Metadata read, Contents read, Checks read, Pull requests
+   read and write; installed on the repositories Lockkeeper should watch. Note the App ID
    and generate a private key.
 2. **An Access application** (self-hosted) on the hostname, with a policy
    for the people who may ask and a Service Auth policy for the service
    tokens your clients use. Note the application's AUD tag.
-3. **Make it yours.** Before you create anything, edit two files:
+3. **Make it yours.** Two files name an organisation, and no source
+   file does. Before you create anything:
    - **`worker/wrangler.jsonc`** carries Cofferdam's names, ids and
      hostname. Change `name`, `routes`, the D1 and Vectorize names,
-     `GITHUB_APP_ID`, `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` (and the
-     database name in `worker/package.json`'s `db:migrate`). Without
+     `GITHUB_APP_ID`, `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`. Without
      `ACCESS_AUD` every request is refused.
-   - **`lockkeeper.config.ts`** holds your organisation (`owner`), the
-     repositories to skip, how a branch names its issue (`issues`), and
-     the **sensitive-path list**: globs a change may never touch and
-     still be called unattended-eligible. Start with your auth code,
-     your deploy config and your CI workflows.
+   - **`lockkeeper.config.ts`** holds Cofferdam's values. Replace its
+     contents with yours; the smallest one is
+
+     ```ts
+     import { defineConfig } from "./worker/src/config";
+     export type { CiSource, LockkeeperConfig } from "./worker/src/config";
+     export default defineConfig({ owner: "your-org" });
+     ```
+
+     Everything else has a default (`worker/src/config.ts` lists them).
+     The one worth setting early is `sensitive`: globs, `<repo>/<path>`,
+     a change may never touch and still be called unattended-eligible.
+     The default is every CI workflow; add your auth code and your
+     deploy config, and keep `**/.github/workflows/**` in the list.
 4. **The resources and the deploy**, from the repository root:
 
 ```sh
@@ -257,15 +269,26 @@ pnpm exec wrangler secret put GITHUB_APP_PRIVATE_KEY < app-key.pem
 pnpm run deploy
 ```
 
-5. **CI.** The App reads no check runs, so Lockkeeper learns CI from a
-   comment your CI keeps on each pull request: a first line
-   `<!-- cofferdam-ci:<job> -->`, then a heading
-   ``### CI ✅ passed · `<job>` on <sha7>`` (or `❌ failed`), where
-   `<sha7>` is the first seven characters of the head commit, posted by
-   a bot and updated in place. `.github/workflows/ci.yml` in this
-   repository has a step that writes it. Without that comment CI reads
-   as unknown, and no pull request is ever unattended-eligible; the rest
-   works the same.
+5. **CI: name your job.** Lockkeeper reads the check runs on each pull
+   request's head, which is what GitHub Actions and most CI apps already
+   write. A head is green when none of its runs failed or is still
+   running and at least one succeeded. Set
+   `ci: { requireChecks: ["test"] }` to the name of your CI job (`*`
+   matches any run of characters): then a head your CI never ran on is
+   not green just because a deploy app or a scanner reported success. If
+   a check that is not required keeps failing, name it in
+   `ci.ignoreChecks`.
+
+   If your App cannot have Checks read, set
+   `ci: { sources: ["comment"] }` and have each CI job keep one comment
+   on the pull request: a first line `<!-- lockkeeper-ci:<job> -->`,
+   then a heading ``### CI ✅ passed · `<job>` on <sha7>`` (or
+   `❌ failed`), where `<sha7>` is the first seven characters of the head
+   commit, posted by a bot and updated in place.
+   `.github/workflows/ci.yml` in this repository has a step that writes
+   one (with Cofferdam's marker). If you name both sources, both must
+   say passed. When GitHub refuses check runs, `GET /v1/status` says so
+   under `notes` instead of passing it off as a repository without CI.
 
 Locally, `pnpm dev` runs the Worker with `ENVIRONMENT=development` and
 the cron reachable for testing. Access is skipped only when `ACCESS_AUD`

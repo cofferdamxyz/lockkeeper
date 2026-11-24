@@ -27,6 +27,10 @@ export default defineConfig(async () => {
         },
       }),
     ],
+    // Tests run against a fixture configuration, never the organisation's own file.
+    resolve: {
+      alias: [{ find: /^(?:\.\.\/)+lockkeeper\.config(?:\.ts)?$/, replacement: path.join(import.meta.dirname, "src/test/lockkeeper.config.fixture.ts") }],
+    },
     test: {
       include: ["src/**/*.test.ts"],
       setupFiles: ["./src/test/setup.ts"],

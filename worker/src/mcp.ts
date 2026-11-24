@@ -19,13 +19,13 @@ export const SERVER_INFO = { name: "lockkeeper", version: "0.3.0" };
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 const INSTRUCTIONS = [
-  "Lockkeeper tells you what else is in flight in a Cofferdam repository: branches, open pull requests and claims by other sessions, and what landed on the default branch.",
+  `Lockkeeper tells you what else is in flight in a repository of ${config.owner}: branches, open pull requests and claims by other sessions, and what landed on the default branch.`,
   "At the start of work call `brief`; once you know which paths you will touch, call `claim` with them and a one-line goal, and `release_claim` when you stop without pushing.",
   "Before a commit or a push call `check` with your merge base and changed paths.",
   "It is awareness, never a lock: main always wins, branches rebase onto it, and nothing here stops you.",
 ].join(" ");
 
-const repoProp = { type: "string", description: "Repository, `cofferdamxyz/<name>` or just `<name>`." };
+const repoProp = { type: "string", description: `Repository, \`${config.owner}/<name>\` or just \`<name>\`.` };
 const pathsProp = { type: "array", items: { type: "string" }, description: "Paths relative to the repository root; directories end with `/`, globs use `*` and `**`." };
 
 export const TOOLS = [

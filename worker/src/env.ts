@@ -12,7 +12,7 @@ export interface LockkeeperEnv {
   /** `production` behind Access; `development` with an empty `ACCESS_AUD` (`.dev.vars`) skips Access for `wrangler dev`. */
   ENVIRONMENT: string;
   GITHUB_APP_ID: string;
-  /** Team domain, e.g. https://cofferdam.cloudflareaccess.com */
+  /** Team domain, e.g. https://<team>.cloudflareaccess.com */
   ACCESS_TEAM_DOMAIN: string;
   /** The Access application's audience tag. Empty outside development: every request is refused. */
   ACCESS_AUD: string;

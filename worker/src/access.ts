@@ -1,7 +1,7 @@
 import type { LockkeeperEnv } from "./env";
 
 /**
- * Cloudflare Access sits in front of `lockkeeper.cofferdam.xyz` (the `cofferdam` team). Access
+ * Cloudflare Access sits in front of the Worker's hostname. Access
  * signs every request it lets through with `Cf-Access-Jwt-Assertion`; the Worker verifies it
  * again so a misconfigured hostname or a direct `workers.dev` hit fails closed. People carry an
  * `email`; a service token (Claude Code's MCP config and hooks) carries `common_name`, its

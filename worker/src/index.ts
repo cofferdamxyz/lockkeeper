@@ -94,7 +94,7 @@ app.delete("/v1/claims/:id", async (c) => {
   return c.json({ released: c.req.param("id") });
 });
 
-app.post("/v1/poll", async (c) => c.json(await poll(c.env)));
+app.post("/v1/poll", async (c) => c.json(await poll(c.env, { retryChecks: true })));
 
 // The landing order per repository, with each candidate's verdict and its issue.
 app.get("/v1/advice", async (c) => {

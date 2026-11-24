@@ -1,6 +1,6 @@
 import { env as bindings } from "cloudflare:workers";
 
-import { base64url, resetTokenCache, type CommentInfo } from "../github";
+import { base64url, resetTokenCache, type CheckRunInfo, type CommentInfo } from "../github";
 import { resetAccessKeys } from "../access";
 import type { LockkeeperEnv } from "../env";
 
@@ -23,6 +23,12 @@ export interface FakeRepo {
   branches: Record<string, { base: string; commits: FakeCommit[] }>;
   pulls?: { number: number; title: string; branch: string; draft?: boolean }[];
   comments?: Record<number, CommentInfo[]>;
+  /** Check runs by head SHA. A repository without this key answers as an App without Checks read is answered: 403. */
+  checks?: Record<string, CheckRunInfo[]>;
+  /** Every page of check runs says another follows, as for a commit with more runs than Lockkeeper reads. */
+  checksEndless?: boolean;
+  /** The same for a pull request's comments. */
+  commentsEndless?: boolean;
   /** Pull requests that are no longer open: number → merged or not. */
   closed?: Record<number, { merged: boolean }>;
 }
@@ -33,6 +39,8 @@ export interface FakeGitHub {
   calls: string[];
   /** Answer every comment write with this status (403: the App lacks the permission). */
   refuseWrites?: number;
+  /** Answer every check-runs read with this status and message instead (a rate limit, say). */
+  checksError?: { status: number; message: string };
 }
 
 let commentIds = 9000;
@@ -109,12 +117,25 @@ export function fakeFetch(gh: FakeGitHub) {
         })),
       );
     }
+    const runs = /^commits\/([0-9a-f]+)\/check-runs$/.exec(rest);
+    if (runs) {
+      if (gh.checksError) return json({ message: gh.checksError.message }, gh.checksError.status);
+      if (!repo.checks) return json({ message: "Resource not accessible by integration" }, 403);
+      const body = { total_count: (repo.checks[runs[1]] ?? []).length, check_runs: repo.checks[runs[1]] ?? [] };
+      if (!repo.checksEndless) return json(body);
+      const page = Number(url.searchParams.get("page") ?? "1") + 1;
+      return Response.json(body, { headers: { link: `<https://api.github.com${p}?filter=latest&per_page=100&page=${page}>; rel="next"` } });
+    }
     const cm = /^issues\/(\d+)\/comments$/.exec(rest);
     if (cm && method === "POST") {
       if (gh.refuseWrites) return json({ message: "Resource not accessible by integration" }, gh.refuseWrites);
       const made: CommentInfo = { id: ++commentIds, body: JSON.parse(String(init?.body)).body, user: { type: "Bot" }, updated_at: "" };
       ((repo.comments ??= {})[Number(cm[1])] ??= []).push(made);
       return json({ id: made.id }, 201);
+    }
+    if (cm && repo.commentsEndless) {
+      const page = Number(url.searchParams.get("page") ?? "1") + 1;
+      return Response.json(repo.comments?.[Number(cm[1])] ?? [], { headers: { link: `<https://api.github.com${p}?per_page=100&page=${page}>; rel="next"` } });
     }
     if (cm) return json(repo.comments?.[Number(cm[1])] ?? []);
     const edit = /^issues\/comments\/(\d+)$/.exec(rest);

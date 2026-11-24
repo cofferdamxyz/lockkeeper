@@ -1,7 +1,7 @@
 /**
- * GitHub, read through Lockkeeper's own GitHub App (workspace decision 0053): metadata and
- * contents read, pull requests write (DESIGN.md, "The advising pass": one advice comment per candidate
- * pull request, created once and edited in place; nothing else is ever written).
+ * GitHub, read through Lockkeeper's own GitHub App: metadata, contents and checks read, pull
+ * requests write (DESIGN.md, "The advising pass": one advice comment per candidate pull request,
+ * created once and edited in place; nothing else is ever written).
  * The App's private key is a Wrangler secret; installation tokens live in memory for under an hour.
  */
 
@@ -116,6 +116,20 @@ export interface CompareInfo {
   files?: { filename: string; previous_filename?: string }[];
 }
 
+/** One check run on a commit, as GitHub lists it. `name` is chosen by whoever made the run: never shown, only matched. */
+export interface CheckRunInfo {
+  name: string;
+  /** `queued`, `in_progress`, `completed`, and GitHub's other waiting states. */
+  status: string;
+  /** Set once `status` is `completed`. */
+  conclusion: string | null;
+}
+
+/** Every path a compare touches: a renamed file counts under its old name too, since that path changed as well. */
+export function changedPaths(cmp: CompareInfo): string[] {
+  return [...new Set((cmp.files ?? []).flatMap((f) => (f.previous_filename ? [f.filename, f.previous_filename] : [f.filename])))];
+}
+
 export interface CommentInfo {
   /** Absent only in old fixtures; GitHub always sends it. */
   id?: number;
@@ -148,7 +162,7 @@ export class GitHub {
       headers: {
         accept: "application/vnd.github+json",
         "x-github-api-version": "2022-11-28",
-        "user-agent": "lockkeeper-cofferdam",
+        "user-agent": "lockkeeper",
         authorization: `Bearer ${init.token}`,
         ...(init.headers ?? {}),
       },
@@ -181,8 +195,8 @@ export class GitHub {
     return (await res.json()) as T;
   }
 
-  /** Follows `Link: rel="next"` up to `maxPages` pages. */
-  async list<T>(path: string, maxPages = 3, pick?: (body: unknown) => T[]): Promise<T[]> {
+  /** Follows `Link: rel="next"` up to `maxPages` pages; `more` says GitHub had pages beyond them. */
+  async pages<T>(path: string, maxPages = 3, pick?: (body: unknown) => T[]): Promise<{ items: T[]; more: boolean }> {
     const token = await this.installationToken();
     const out: T[] = [];
     let next: string | null = path;
@@ -193,7 +207,11 @@ export class GitHub {
       out.push(...(pick ? pick(body) : (body as T[])));
       next = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1] ?? null;
     }
-    return out;
+    return { items: out, more: next !== null };
+  }
+
+  async list<T>(path: string, maxPages = 3, pick?: (body: unknown) => T[]): Promise<T[]> {
+    return (await this.pages(path, maxPages, pick)).items;
   }
 
   repositories(): Promise<RepoInfo[]> {
@@ -210,6 +228,20 @@ export class GitHub {
 
   compare(repo: string, base: string, head: string): Promise<CompareInfo> {
     return this.get<CompareInfo>(`/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=100`);
+  }
+
+  /**
+   * The latest check runs on one commit (needs Checks read on the App; GitHub answers 403 without
+   * it). `complete` is false when the commit has more runs than the three pages read.
+   */
+  async checkRuns(repo: string, sha: string): Promise<{ runs: CheckRunInfo[]; complete: boolean }> {
+    const { items, more } = await this.pages<CheckRunInfo>(`/repos/${repo}/commits/${sha}/check-runs?filter=latest&per_page=100`, 3, (b) => (b as { check_runs: CheckRunInfo[] }).check_runs);
+    return { runs: items, complete: !more };
+  }
+
+  /** A pull request's comments, oldest first, three pages at most; `more` says there are comments beyond them. */
+  commentPages(repo: string, issue: number): Promise<{ items: CommentInfo[]; more: boolean }> {
+    return this.pages<CommentInfo>(`/repos/${repo}/issues/${issue}/comments?per_page=100`, 3);
   }
 
   comments(repo: string, issue: number, maxPages = 1): Promise<CommentInfo[]> {
@@ -246,19 +278,58 @@ export type CiState = "pass" | "fail" | "pending" | "none";
 /** The first line of Lockkeeper's own advice comment (advice.ts). Never read as a CI report. */
 export const ADVICE_MARKER = "<!-- lockkeeper-advice -->";
 
+/** `*` in a pattern stands for any run of characters; everything else is literal. */
+function nameMatches(pattern: string, name: string): boolean {
+  const body = pattern
+    .split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp("^" + body + "$").test(name);
+}
+
 /**
- * Cofferdam CI posts one comment per job on a pull request (`<!-- cofferdam-ci:<job> -->`, then
- * `### CI ✅ passed · \`job\` on <sha7>`), updated in place; the App cannot read check runs.
- * The state for a head is the worst of the jobs that ran on it.
+ * CI from the check runs on a head (`ci.sources: "checks"`). The state is the worst of the runs
+ * that count: one that did not succeed is `fail`; one still running or gone stale is `pending`,
+ * and so is a head whose runs could not all be read, or that lacks a success from a run the
+ * configuration requires. `pass` needs at least one success, so a head whose runs were all
+ * skipped or neutral says nothing (`none`), like a head with no run at all.
  */
-export function ciFromComments(comments: CommentInfo[], headSha: string): CiState {
+export function ciFromCheckRuns(runs: CheckRunInfo[], opts: { ignore?: string[]; require?: string[]; complete?: boolean } = {}): CiState {
+  const ignore = opts.ignore ?? [];
+  const succeeded: string[] = [];
+  let counted = 0;
+  let pending = false;
+  let failed = false;
+  for (const r of runs) {
+    if (ignore.some((pattern) => nameMatches(pattern, r.name))) continue;
+    counted++;
+    if (r.status !== "completed" || r.conclusion === "stale") pending = true;
+    else if (r.conclusion === "success") succeeded.push(r.name);
+    else if (r.conclusion !== "neutral" && r.conclusion !== "skipped") failed = true; // failure, timed_out, cancelled, action_required, startup_failure, or nothing
+  }
+  if (failed) return "fail";
+  if (pending || opts.complete === false) return "pending";
+  // A run the configuration requires has not succeeded here: the CI did not run on this head (yet).
+  if ((opts.require ?? []).some((pattern) => !succeeded.some((name) => nameMatches(pattern, name)))) return counted ? "pending" : "none";
+  return succeeded.length ? "pass" : "none";
+}
+
+/**
+ * CI from a comment (`ci.sources: "comment"`), for an App that cannot read check runs: each CI
+ * job keeps one comment on the pull request, updated in place, whose first line opens with
+ * `marker` (`<marker><job> -->`) and whose heading reads `### CI ✅ passed · \`job\` on <sha7>`
+ * (or `❌ failed`). The state for a head is the worst of the jobs that ran on it.
+ */
+export function ciFromComments(comments: CommentInfo[], headSha: string, marker: string): CiState {
+  if (!marker) return "none";
   const sha7 = headSha.slice(0, 7);
   let seen = false;
   let stale = false;
   let failed = false;
   for (const c of comments) {
     // Lockkeeper's own comment quotes file names from the pull request: it is never evidence of CI.
-    if (c.user?.type !== "Bot" || c.body.startsWith(ADVICE_MARKER) || !c.body.includes("<!-- cofferdam-ci:")) continue;
+    // The marker opens the comment: a bot that quotes text a pull request chose cannot carry one.
+    if (c.user?.type !== "Bot" || c.body.startsWith(ADVICE_MARKER) || !c.body.startsWith(marker)) continue;
     const m = /### CI (✅ passed|❌ failed)[^\n]* on ([0-9a-f]{7})/.exec(c.body);
     if (!m) continue;
     if (m[2] !== sha7) {
