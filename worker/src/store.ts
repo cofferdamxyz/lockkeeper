@@ -372,6 +372,40 @@ export async function addDecision(
     .run();
 }
 
+export interface DecisionRow {
+  id: string;
+  repo: string;
+  /** The candidates' ids as they were sent (`pr-<number>`). */
+  candidates: string[];
+  /** Clef's raw answer, or null when the request failed. */
+  response: unknown;
+  error: string | null;
+  at: string;
+}
+
+/** The newest requests to Clef. The request itself, which quotes text the pull requests chose, is left in the ledger. */
+export async function getDecisions(env: Pick<LockkeeperEnv, "DB">, limit = 20, repo?: string): Promise<DecisionRow[]> {
+  const stmt = repo
+    ? env.DB.prepare("SELECT id, repo, candidates_json, response_json, error, at FROM decisions WHERE repo = ? ORDER BY at DESC LIMIT ?").bind(repo, limit)
+    : env.DB.prepare("SELECT id, repo, candidates_json, response_json, error, at FROM decisions ORDER BY at DESC LIMIT ?").bind(limit);
+  const { results } = await stmt.all<Record<string, unknown>>();
+  const parse = (v: unknown, fallback: unknown) => {
+    try {
+      return typeof v === "string" ? JSON.parse(v) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return results.map((r) => ({
+    id: String(r.id),
+    repo: String(r.repo),
+    candidates: ((c) => (Array.isArray(c) ? c.map(String) : []))(parse(r.candidates_json, [])),
+    response: parse(r.response_json, null),
+    error: r.error == null ? null : String(r.error),
+    at: String(r.at),
+  }));
+}
+
 export async function pruneDecisions(env: Pick<LockkeeperEnv, "DB">, beforeIso: string): Promise<void> {
   await env.DB.prepare("DELETE FROM decisions WHERE at < ?").bind(beforeIso).run();
 }

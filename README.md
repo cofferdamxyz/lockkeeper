@@ -201,6 +201,15 @@ The answer's `text` is ready to show to a model or a person;
 `owner/name` or just `name`, and paths may be files, folders (`src/lib/`)
 or globs (`src/lib/**`).
 
+### A person, in a browser
+
+Open the deployment's address and sign in through Access. The root is a
+monitor: the landing queue per repository with each pull request's CI,
+verdict and Clef's numbers, the branches in flight and what they share,
+the claims, what landed in the last day, and Clef's decisions with what
+became of its advice. It reloads every minute and has no control on it;
+`?repo=<name>` shows one repository.
+
 ### A tracker, a dashboard or a bot
 
 `GET /v1/present` is one read with everything a board needs: the branches
@@ -216,12 +225,13 @@ stateless).
 | `GET /v1/brief?repo=&paths=&goal=&branch=` | The brief, as text: in flight near these paths, what landed recently, sensitive paths |
 | `GET /v1/inflight?…` | The same as JSON |
 | `POST /v1/check` `{repo, base, paths, branch?, goal?}` | Before a commit or push: what moved on the default branch since `base` (read live), which files collide, other work on them |
-| `POST /v1/claims` `{repo, goal, paths?, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240; without paths it covers the repository) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
+| `POST /v1/claims` `{repo, goal, paths?, branch?, session?, ttl_minutes?}` | Takes a claim (default 60 min, max 240, at most 50 live per identity; without paths it covers the repository) and returns the brief; `GET /v1/claims`, `POST /v1/claims/:id/renew`, `DELETE /v1/claims/:id` |
 | `POST /v1/poll`, `GET /v1/status` | Polls now (and asks for check runs again if GitHub had refused them); the last poll's and the last advising pass's reports |
 | `GET /v1/advice?repo=` | The landing order per repository: each open pull request's position, CI, unattended-eligible verdict with its reasons, Clef's numbers, label suggestion and issue |
 | `GET /v1/present?repo=` | One read for a tracker: branches in flight with pull request, CI, issue and overlap on each other, live claims, the landing order |
 | `POST /v1/advise` | Runs the advising pass now (`?force=1` asks Clef again where nothing moved) |
 | `POST /mcp` | The MCP server: `brief`, `claim`, `renew_claim`, `release_claim`, `check`, `in_flight`, `landing_order` |
+| `GET /` | The monitor: one page for a person, with the queue, the branches in flight and Clef's decisions |
 | `GET /health` | Alive, and when the last poll ran; the one route the Worker answers without checking the Access assertion again |
 
 ## Run your own

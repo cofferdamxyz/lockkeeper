@@ -570,6 +570,9 @@ export async function landingOrder(env: LockkeeperEnv, repo?: string): Promise<L
       head: r.head_sha,
       order: rows.map((a) => {
         const b = branches.get(a.branch);
+        // Advice is about one head. Between a push and the next advising pass the row still holds
+        // the old head's verdict: it is shown, but never as eligible.
+        const moved = b !== undefined && b.head_sha !== a.head_sha;
         return {
           position: a.position,
           pr: a.pr_number,
@@ -581,8 +584,8 @@ export async function landingOrder(env: LockkeeperEnv, repo?: string): Promise<L
           ci: b?.ci ?? "none",
           ahead: b?.ahead ?? 0,
           behind: b?.behind ?? 0,
-          eligible: a.eligible,
-          reasons: a.reasons,
+          eligible: a.eligible && !moved,
+          reasons: moved ? [`its head moved since this advice (given on ${a.head_sha.slice(0, 7)}): wait for the next advising pass`, ...a.reasons] : a.reasons,
           unattended: a.unattended,
           risk: a.risk,
           nextP: a.next_p,

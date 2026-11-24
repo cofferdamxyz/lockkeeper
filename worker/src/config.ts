@@ -18,7 +18,8 @@ export interface LockkeeperConfig {
   sensitive: string[];
   /** A branch with no commit for this many days drops out of "in flight" unless a pull request is open. */
   staleDays: number;
-  claims: { defaultMinutes: number; maxMinutes: number };
+  /** A claim's time to live, and how many live claims one identity may hold at once. */
+  claims: { defaultMinutes: number; maxMinutes: number; maxLive: number };
   /** Minimum cosine similarity for a change with no shared path to count as near. */
   nearCosine: number;
   /** Window for "landed on main recently" in briefs. */
@@ -79,7 +80,7 @@ export const defaults: Omit<LockkeeperConfig, "owner"> = {
   exclude: [],
   sensitive: ["**/.github/workflows/**"],
   staleDays: 14,
-  claims: { defaultMinutes: 60, maxMinutes: 240 },
+  claims: { defaultMinutes: 60, maxMinutes: 240, maxLive: 50 },
   nearCosine: 0.6,
   recentHours: 24,
   advice: { comment: true, retryHours: 6, sensitiveLabel: "security" },

@@ -12,7 +12,7 @@ import { claimText, claimVectorId, remove, upsert } from "./vectorIndex";
 
 export class ClaimError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404,
+    readonly status: 400 | 403 | 404 | 429,
     message: string,
   ) {
     super(message);
@@ -58,6 +58,9 @@ export async function createClaim(
   const now = opts.now ?? new Date();
   const goal = typeof input.goal === "string" ? input.goal.trim().slice(0, 500) : "";
   if (!goal) throw new ClaimError(400, "goal is required: one sentence on what the work is");
+  // Every reader loads the live claims (the brief, the present state, the monitor): one identity cannot fill that list.
+  const live = (await activeClaims(env, now.toISOString())).filter((c) => c.who === who).length;
+  if (live >= settings.claims.maxLive) throw new ClaimError(429, `you hold ${live} live claims, the most one identity may: release one first`);
   const claim: ClaimRow = {
     id: newClaimId(),
     repo: repoName(input.repo, settings.owner),

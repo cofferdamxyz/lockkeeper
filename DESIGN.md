@@ -159,7 +159,8 @@ everything in it can be rebuilt from GitHub and D1.
 
 A claim covers the window before a branch exists on GitHub:
 `{repo, paths, goal, branch?, session?}` with a time to live (60 minutes
-by default, 240 at most). It is owned by the Access identity that took it
+by default, 240 at most; one identity holds at most `claims.maxLive`,
+50, at a time). It is owned by the Access identity that took it
 (only that identity renews or releases it), embedded like a branch,
 released when its branch reaches GitHub, and pruned a day after it ends.
 Paths may be files, directories (`src/lib/`) or globs (`src/lib/**`); a
@@ -199,6 +200,7 @@ Development Tracker's Present column.
 
 | Route | What it answers |
 |---|---|
+| `GET /` | The monitor, a page for a person (§9); `/monitor/*.woff2` are its two fonts |
 | `GET /health` | Alive, and when the last poll ran. The one route the Worker answers without verifying the Access assertion again; Access still sits in front of it |
 | `GET /v1/brief?repo=&paths=&goal=&branch=` | The brief, as text |
 | `GET /v1/inflight?…` | The same as JSON |
@@ -343,6 +345,41 @@ second time (`LOCKKEEPER_PUSH=inform` turns the hold off). Unconfigured,
 unreachable or slow (four seconds), it exits 0 with nothing. Nothing runs
 after a push. Example settings and MCP config sit beside it.
 
+### The monitor
+
+`GET /`, one page for a person (`worker/src/monitor.ts`): how many
+repositories, branches, open pull requests and claims there are; the
+landing queue per repository, each pull request with its CI, its verdict,
+Clef's three numbers and the reasons behind a toggle; the branches in
+flight with what each shares with the others, and the claims; what landed
+in the last `recentHours`; Clef's decisions, newest first, with its pick
+and whether it answered, and what became of the pull requests it advised
+on; and every repository Lockkeeper can see. `?repo=` shows one
+repository. It reloads itself every minute.
+
+It is the data the API answers, plus the decision ledger and the
+outcomes, which no route returned before (the requests themselves, which
+quote pull request text, stay in the ledger). It changes nothing: there
+is no form and no control on it. It sits
+behind Access like every other route, and so do its two font files
+(`/monitor/geist.woff2`, `/monitor/geist-mono.woff2`, served from the
+Worker because it binds no assets).
+
+The page is written as text by the Worker and carries no script. Every
+string a pull request, a claim or an identity chose is escaped on its way
+in, with the characters that hide or reorder text removed; a number is
+written only where its type was checked; a link leads to a
+`https://github.com/` URL or to the page itself; and the content
+policy is `default-src 'none'` with inline style, the two fonts and one
+inline icon allowed and nothing else: no script, no connection, no frame,
+no form. The page never says more than the ledger holds: open pull
+requests are counted from the poll, and where the advice is behind (not
+asked yet, or past `clef.maxCandidates`) it says how many wait; a verdict
+given for one head is never shown as eligible once the head has moved;
+and the decisions table reports Clef's numbers against the thresholds,
+which is not the verdict. It replaces nothing that was removed: the competition
+dashboard's editor view and its three-dimensional map stay at the tag.
+
 ### Other readers
 
 Anything with an Access service token of its own reads the same routes.
@@ -396,7 +433,8 @@ and this repository's own CI workflow carry that name as data.
   `base-contracts/**`; every `wrangler.jsonc`; the OS `deployment.jsonc`
   and `scripts/**`; every CI workflow; and Lockkeeper's own
   `worker/src/**` and this file;
-- `staleDays`, `claims` (default and maximum minutes), `nearCosine`,
+- `staleDays`, `claims` (default and maximum minutes, and how many live
+  claims one identity may hold), `nearCosine`,
   `recentHours`;
 - `advice`: whether the advice is commented, how long to wait after a
   refusal, and the label it suggests for a change on a sensitive path
@@ -520,6 +558,13 @@ the bge-m3 index and the decision ledger.
 
 ## Change log
 
+- 2026-11-23: the monitor (Cofferdam workspace decision 0096): `GET /`
+  is a page for a person, behind Access, with the repositories, the
+  branches in flight, the landing queue and Clef's decisions. Rendered by
+  the Worker as text with no script; `getDecisions` reads the ledger
+  without the requests. With it: the landing order (the API and the MCP
+  tool too) no longer shows a verdict as eligible once the pull request's
+  head has moved, and one identity holds at most 50 live claims.
 - 2026-11-23: CI is read from the head's check runs as well as the CI
   comment, and both must agree (Cofferdam workspace decision 0095):
   `ci` in the configuration (`sources`, `requireChecks`, `ignoreChecks`;

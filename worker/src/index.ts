@@ -7,6 +7,8 @@ import { ClaimError, createClaim, dropClaim, extendClaim, listClaims, repoName }
 import type { LockkeeperEnv } from "./env";
 import { briefText, check, checkText, inFlight, toJson } from "./inflight";
 import { handleMcp } from "./mcp";
+import { MONITOR_HEADERS, monitorData, renderMonitor } from "./monitor";
+import { GEIST_MONO_WOFF2, GEIST_WOFF2 } from "./monitorFonts";
 import { cleanPaths } from "./paths";
 import { poll } from "./poll";
 import { present } from "./present";
@@ -35,6 +37,22 @@ app.get("/health", async (c) => c.json({ ok: true, polledAt: await getSetting(c.
 app.use("*", async (c, next) => {
   c.set("who", await verifyAccess(c.env, c.req.raw));
   await next();
+});
+
+// The monitor: one page for a person, behind Access like everything below (DESIGN.md, "The monitor").
+app.get("/", async (c) => {
+  const raw = c.req.query("repo");
+  const repo = raw ? repoName(raw, config.owner) : undefined;
+  return new Response(renderMonitor(await monitorData(c.env, c.get("who"), repo)), { headers: MONITOR_HEADERS });
+});
+
+const FONTS: Record<string, string> = { "geist.woff2": GEIST_WOFF2, "geist-mono.woff2": GEIST_MONO_WOFF2 };
+app.get("/monitor/:font", (c) => {
+  const name = c.req.param("font");
+  if (!Object.hasOwn(FONTS, name)) return c.json({ error: "not found" }, 404);
+  const b64 = FONTS[name];
+  const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+  return new Response(bytes, { headers: { "content-type": "font/woff2", "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" } });
 });
 
 const queryPaths = (raw: string | undefined) => cleanPaths((raw ?? "").split(",").filter(Boolean));

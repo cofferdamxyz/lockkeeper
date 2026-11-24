@@ -70,6 +70,7 @@ describe("defineConfig", () => {
     expect(defaults.sensitive).toEqual(["**/.github/workflows/**"]);
     expect(defaults.ci).toEqual({ sources: ["checks"], requireChecks: [], ignoreChecks: [], commentMarker: "<!-- lockkeeper-ci:", retryHours: 6 });
     expect(defaults.issues).toBeNull();
+    expect(defaults.claims).toEqual({ defaultMinutes: 60, maxMinutes: 240, maxLive: 50 });
     expect(defaults.clef).toEqual({ model: "clef", unattended: 0.8, maxRisk: 1.0, maxCandidates: 20 });
     expect(defaults.advice).toEqual({ comment: true, retryHours: 6, sensitiveLabel: "security" });
   });

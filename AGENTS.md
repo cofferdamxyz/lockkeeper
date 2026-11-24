@@ -35,7 +35,8 @@ tag `competition-runner-final`. Do not bring any of it back.
   runs or the CI comment; `claims.ts`; `inflight.ts` the in-flight
   answer, the brief and the check; `advice.ts` the advising pass;
   `issues.ts` the issue binding; `present.ts` the one-read answer for the
-  OS gatekeeper; `access.ts` Access verification; `mcp.ts` the MCP
+  OS gatekeeper; `monitor.ts` the page for a person at `/` (text only, no
+  script; `monitorFonts.ts` is its two fonts, generated); `access.ts` Access verification; `mcp.ts` the MCP
   server; `store.ts` D1; `vectorIndex.ts` and `vectors.ts` the index;
   `clef.ts` Clef's shapes; `paths.ts` globs and the sensitive list. D1
   migrations are `worker/migrations/`.
