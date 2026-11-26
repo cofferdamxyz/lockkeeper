@@ -1,4 +1,10 @@
-# Lockkeeper
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/lockkeeper-lockup-horizontal-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/logo/lockkeeper-lockup-horizontal-black.svg">
+    <img alt="Lockkeeper" src="docs/logo/lockkeeper-lockup-horizontal-black.svg" width="300">
+  </picture>
+</h1>
 
 Lockkeeper tells everyone working on your repositories, people and coding
 agents alike, what else is being worked on right now, before two of them

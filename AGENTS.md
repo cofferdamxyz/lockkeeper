@@ -51,6 +51,12 @@ tag `competition-runner-final`. Do not bring any of it back.
   diagram states changes in `DESIGN.md` (the poll's five minutes, the
   cosine of 0.6, the comment's wording), change the script, render and
   copy the four files over.
+- `docs/logo/` — Lockkeeper's lockup, white and black, for the top of
+  the README (a `<picture>` picks one by the reader's colour scheme).
+  Copies too: the source is `scripts/make-lockkeeper-logo.py` in
+  `cofferdam-branding`, which writes `assets/logos/lockkeeper/`. Never
+  edit or recolour a file here; the monitor's mark in
+  `worker/src/monitor.ts` is the same two polygons.
 - `lockkeeper.config.ts` — the organisation's values and nothing else:
   owner, excluded repositories, the sensitive-path list, the CI sources,
   how a branch names its issue, and whatever differs from the defaults
